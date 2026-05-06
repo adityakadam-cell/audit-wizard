@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% set current_step = 3 %}
+{% block title %}Audit Wizard · Step 3 · Results{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 3 · Audit complete</h1>
+  <p class="hint">
+    Audited <strong>{{ job.url }}</strong> in
+    {{ ((job.finished_at - job.started_at) | round(0, 'common')) | int }} seconds.
+  </p>
+
+  {# ---- Score cards ---- #}
+  <div class="score-cards">
+    <div class="score-card">
+      <div class="score-num">{{ summary.page_count }}</div>
+      <div class="score-label">Pages scanned</div>
+    </div>
+    <div class="score-card score-card-avg">
+      <div class="score-num">{{ summary.avg_score }}</div>
+      <div class="score-label">Avg Score</div>
+    </div>
+    <div class="score-card score-card-critical">
+      <div class="score-num">{{ summary.critical_total }}</div>
+      <div class="score-label">Critical</div>
+    </div>
+    <div class="score-card score-card-warning">
+      <div class="score-num">{{ summary.warning_total }}</div>
+      <div class="score-label">Warnings</div>
+    </div>
+    <div class="score-card">
+      <div class="score-num">{{ summary.info_total }}</div>
+      <div class="score-label">Info</div>
+    </div>
+  </div>
+
+  {# ---- Download buttons ---- #}
+  <div class="toolbar">
+    <a href="{{ url_for('download', job_id=job.id, fmt='html') }}" class="btn primary">
+      ⬇ Download HTML report
+    </a>
+    <a href="{{ url_for('download', job_id=job.id, fmt='xlsx') }}" class="btn">
+      ⬇ Excel (XLSX)
+    </a>
+    <a href="{{ url_for('download', job_id=job.id, fmt='csv') }}" class="btn">
+      ⬇ CSV summary
+    </a>
+    <a href="{{ url_for('step1') }}" class="btn">+ New audit</a>
+  </div>
+
+  {% if job.email %}
+    <p class="hint" style="margin-top:14px">
+      ✓ A link to this report has been sent to <strong>{{ job.email }}</strong>
+      (if not received, check spam — the from address is
+      <code>onboarding@resend.dev</code> by default).
+    </p>
+  {% endif %}
+
+  <p class="hint" style="margin-top:6px">
+    The report stays online for 1 hour. Download to keep it longer.
+  </p>
+</div>
+
+{# ---- 27-point Checklist Summary ---- #}
+<div class="card">
+  <h2 style="margin-top:0">27-Point Checklist</h2>
+  <p class="hint">
+    Site-wide compliance with the audit checklist. For each checkpoint, the
+    bar shows how many of the {{ summary.page_count }} crawled pages pass.
+    Click any item to see the rule.
+  </p>
+
+  {% set group_order = ['On-page SEO', 'Images', 'Content', 'Product Tables', 'Page Content', 'Technical'] %}
+  {% for group in group_order %}
+    <h3 class="cl-group">{{ group }}</h3>
+    <div class="cl-items">
+      {% for cp in checklist_summary if cp.group == group %}
+        {% set total = cp.total or 1 %}
+        {% set pass_pct = (cp.pass / total * 100) | round(0, 'common') | int %}
+        {% set fail_pct = (cp.fail / total * 100) | round(0, 'common') | int %}
+        {% set info_pct = (cp.info / total * 100) | round(0, 'common') | int %}
+        {% set skipped_pct = (cp.skipped / total * 100) | round(0, 'common') | int %}
+        {% set manual_pct = (cp.manual / total * 100) | round(0, 'common') | int %}
+        <details class="cl-item">
+          <summary class="cl-summary">
+            <span class="cl-num">{{ cp.number }}</span>
+            <span class="cl-label">{{ cp.label }}</span>
+            <div class="cl-bar">
+              {% if pass_pct %}<span class="cl-seg cl-pass" style="width:{{ pass_pct }}%" title="{{ cp.pass }} pages pass"></span>{% endif %}
+              {% if fail_pct %}<span class="cl-seg cl-fail" style="width:{{ fail_pct }}%" title="{{ cp.fail }} pages fail"></span>{% endif %}
+              {% if info_pct %}<span class="cl-seg cl-info" style="width:{{ info_pct }}%" title="{{ cp.info }} pages info"></span>{% endif %}
+              {% if skipped_pct %}<span class="cl-seg cl-skipped" style="width:{{ skipped_pct }}%" title="{{ cp.skipped }} pages skipped"></span>{% endif %}
+              {% if manual_pct %}<span class="cl-seg cl-manual" style="width:{{ manual_pct }}%" title="{{ cp.manual }} pages need manual review"></span>{% endif %}
+            </div>
+            <span class="cl-counts">
+              {% if cp.fail %}<span class="cl-c-fail">{{ cp.fail }} fail</span>{% endif %}
+              {% if cp.pass %}<span class="cl-c-pass">{{ cp.pass }} pass</span>{% endif %}
+              {% if cp.skipped %}<span class="cl-c-skipped">{{ cp.skipped }} skipped</span>{% endif %}
+              {% if cp.manual %}<span class="cl-c-manual">{{ cp.manual }} manual</span>{% endif %}
+            </span>
+            <span class="cl-toggle">▾</span>
+          </summary>
+          <div class="cl-body">
+            <p>{{ cp.description }}</p>
+          </div>
+        </details>
+      {% endfor %}
+    </div>
+  {% endfor %}
+
+  <div class="cl-legend">
+    <span><span class="cl-dot cl-pass"></span>Pass — rule satisfied</span>
+    <span><span class="cl-dot cl-fail"></span>Fail — issue raised</span>
+    <span><span class="cl-dot cl-info"></span>Info — minor improvement</span>
+    <span><span class="cl-dot cl-skipped"></span>Skipped — turn on Deep Audit / target keyword</span>
+    <span><span class="cl-dot cl-manual"></span>Manual — needs human review</span>
+  </div>
+</div>
+
+{# ---- Embedded interactive report ---- #}
+<div class="card report-frame-card">
+  <h2 style="margin-top:0">Per-page issue breakdown</h2>
+  <p class="hint">
+    Click any page row below to expand. Use the filters to focus on critical
+    pages or low scores.
+  </p>
+  <iframe
+    src="{{ url_for('report_html', job_id=job.id) }}"
+    class="report-iframe"
+    title="Audit results"
+  ></iframe>
+</div>
+{% endblock %}
