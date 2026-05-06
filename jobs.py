@@ -46,15 +46,18 @@ class Job:
         "id", "url", "industry", "max_pages", "email", "status",
         "phase", "current", "total", "current_url", "started_at",
         "finished_at", "error", "results", "report_html", "report_xlsx",
-        "report_csv", "_lock", "_stop_flag",
+        "report_csv", "target_keyword", "deep_audit", "_lock", "_stop_flag",
     )
 
-    def __init__(self, url: str, industry: str, max_pages: int, email: str = ""):
+    def __init__(self, url: str, industry: str, max_pages: int, email: str = "",
+                 target_keyword: str = "", deep_audit: bool = False):
         self.id = secrets.token_urlsafe(12)
         self.url = url
         self.industry = industry
         self.max_pages = max_pages
         self.email = email
+        self.target_keyword = target_keyword
+        self.deep_audit = deep_audit
         self.status = "pending"     # pending / running / done / failed / cancelled
         self.phase = "queued"       # queued / crawling / analyzing / generating / done
         self.current = 0
@@ -117,12 +120,19 @@ _jobs: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
 
 
-def create_job(url: str, industry: str, max_pages: int, email: str = "") -> Job:
-    job = Job(url, industry, max_pages, email)
+def create_job(url: str, industry: str, max_pages: int, email: str = "",
+               target_keyword: str = "", deep_audit: bool = False) -> Job:
+    job = Job(url, industry, max_pages, email,
+              target_keyword=target_keyword, deep_audit=deep_audit)
     with _jobs_lock:
         _jobs[job.id] = job
         _purge_old_jobs_locked()
-    log.info(f"[job {job.id}] created for {url} ({max_pages} pages, industry={industry})")
+    log.info(
+        f"[job {job.id}] created for {url} "
+        f"({max_pages} pages, industry={industry}, "
+        f"keyword={'yes' if target_keyword else 'no'}, "
+        f"deep={'yes' if deep_audit else 'no'})"
+    )
     return job
 
 
@@ -197,7 +207,11 @@ def run_audit_in_background(
             # ---- Analyze ----
             job.set_phase("analyzing")
             job.update_progress(0, len(pages), "")
-            analyzer = Analyzer(industry=job.industry)
+            analyzer = Analyzer(
+                industry=job.industry,
+                target_keyword=job.target_keyword,
+                deep_audit=job.deep_audit,
+            )
             results: list[dict] = []
             for idx, pg in enumerate(pages, start=1):
                 if job.should_stop():

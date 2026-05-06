@@ -12,11 +12,29 @@ Sister project to `optimizer-wizard` — same design language, similar deploy.
 
 A 3-step wizard:
 
-1. **Enter a URL** — plus optional industry, page count cap, and email address.
+1. **Enter a URL** — plus optional industry, target keyword, deep-audit toggle, page count cap, and email address.
 2. **Watch the live progress** — crawl phase, then analyse phase. Cancel anytime.
-3. **Review the results** — interactive report with score cards, filterable page list, expandable issues, and download links for HTML / Excel / CSV. Optional: link emailed to the address you provided.
+3. **Review the results** — score cards, the 27-point checklist summary (site-wide pass/fail), filterable per-page issue list, and download links for HTML / Excel / CSV. Optional: link emailed to the address you provided.
 
-Universal checks (every page): SEO (title, meta, H1, canonical, schema, alt text, robots, OpenGraph), HTML (charset, viewport, HTTPS, lorem ipsum, forms, favicon), performance (response time, page size), content (word count, contact info, CTAs, required sections per industry).
+### The 27-point checklist
+
+Every page is graded against a 27-point industrial SEO checklist organised into 6 groups:
+
+| Group | Checkpoints |
+|---|---|
+| On-page SEO | URL structure · page title · meta description · indexability · canonical · H1 · breadcrumbs · subheadings |
+| Images | File names · alt text · weight (≤ 100 KB, deep mode only) |
+| Content | Internal linking · keyword usage · content originality (manual review) |
+| Product Tables | Specifications · chemical · mechanical · equivalent · size · technical-spec |
+| Page Content | Applications · CTA button · FAQs · contact info |
+| Technical | Schema · mobile-friendly · inquiry form |
+
+Each checkpoint reports one of five statuses per page:
+**Pass** ✓, **Fail** ✗, **Info** ⓘ (minor), **Skipped** (deep audit / target keyword not provided), **Manual** (cannot be auto-checked, e.g. originality).
+
+### Other layers
+
+Universal checks (every page) include SEO basics, HTML hygiene (HTTPS, viewport, charset, lorem-ipsum), performance (response time, page size), and content depth (word count, contact info, CTAs).
 
 Industry-specific checks layered on top:
 
@@ -25,6 +43,11 @@ Industry-specific checks layered on top:
 - **SaaS** — pricing, social proof, trial/demo CTA.
 - **Healthcare** — phone, appointment booking, medical schema.
 - **Real estate** — price/size info, property images, location/map.
+
+### Optional inputs on Step 1
+
+- **Target keyword** — if provided, the checklist's "Keyword Usage" item checks density (1–3 %), placement in title/H1, and over-stuffing. Leave blank to skip.
+- **Deep audit** — off by default. When on, also HEAD-checks every image (≤ 100 KB) and validates that CTA buttons link to working URLs. Adds ~5–10 s per page; enable for thorough pre-launch audits.
 
 ---
 

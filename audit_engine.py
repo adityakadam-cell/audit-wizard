@@ -165,6 +165,129 @@ SEV_ORDER = {'critical': 0, 'warning': 1, 'info': 2}
 
 
 # ============================================================
+#  27-Point Checklist (master registry)
+# ============================================================
+#
+# This is the canonical list every audit issue ties back to. Each entry has:
+#   id           : stable short slug used to tag issues (issue['checkpoint_id'])
+#   number       : 1-27, the position on the checklist
+#   label        : what shows in reports
+#   description  : the rule, in plain language
+#   group        : groups for the report's checklist view
+#   auto         : "full"   = fully auto-checked
+#                  "partial"= partially auto-checked, some judgment needed
+#                  "deep"   = only checked when deep_audit=True (slow, network-heavy)
+#                  "manual" = cannot be auto-checked; surfaced as "needs review"
+#
+# When you add a new check method, give every issue it raises a checkpoint_id
+# matching one of these IDs. The checklist view in the report uses these tags
+# to compute pass/fail per checkpoint per page.
+
+CHECKLIST = [
+    # On-page SEO basics (1-8)
+    {"id": "url_structure",     "number": 1,  "label": "URL Structure",
+     "description": "Clean, readable, keyword-rich URL.",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "page_title",        "number": 2,  "label": "Page Title",
+     "description": "Unique title with main keyword (60-70 characters max).",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "meta_description",  "number": 3,  "label": "Meta Description",
+     "description": "Page meta description with keywords (max 160 characters).",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "indexability",      "number": 4,  "label": "Index / Noindex Tag",
+     "description": "Page is indexable; no noindex tag present.",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "canonical",         "number": 5,  "label": "Canonical Tag",
+     "description": "Canonical link present and points to the correct URL.",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "h1_tag",            "number": 6,  "label": "H1 Tag",
+     "description": "Exactly one H1 per page, containing the main keyword.",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "breadcrumbs",       "number": 7,  "label": "Breadcrumbs",
+     "description": "Proper breadcrumbs with BreadcrumbList schema.",
+     "group": "On-page SEO",     "auto": "full"},
+    {"id": "subheadings",       "number": 8,  "label": "Subheadings",
+     "description": "Proper H2/H3 structure with related products/topics.",
+     "group": "On-page SEO",     "auto": "full"},
+
+    # Images (9-11)
+    {"id": "image_filename",    "number": 9,  "label": "Image File Names",
+     "description": "Descriptive filenames (e.g. stainless-steel-pipe.jpg, not IMG_1234.jpg).",
+     "group": "Images",          "auto": "full"},
+    {"id": "image_alt",         "number": 10, "label": "Image Alt Text",
+     "description": "All images have descriptive alt text.",
+     "group": "Images",          "auto": "full"},
+    {"id": "image_weight",      "number": 11, "label": "Image Optimization",
+     "description": "Each image ≤ 100 KB.",
+     "group": "Images",          "auto": "deep"},
+
+    # Linking & content (12-14)
+    {"id": "internal_linking",  "number": 12, "label": "Internal Linking",
+     "description": "Links to related products or category pages.",
+     "group": "Content",         "auto": "full"},
+    {"id": "keyword_usage",     "number": 13, "label": "Keyword Usage",
+     "description": "Target keyword present and not overused (1-3% density).",
+     "group": "Content",         "auto": "partial"},
+    {"id": "content_unique",    "number": 14, "label": "Content Originality",
+     "description": "Not copied from other sites or catalogs.",
+     "group": "Content",         "auto": "manual"},
+
+    # Tables (15-20) — bread-and-butter for industrial product pages
+    {"id": "specifications",    "number": 15, "label": "Specifications Table",
+     "description": "Table with sizes, grades, standards.",
+     "group": "Product Tables",  "auto": "full"},
+    {"id": "chemical_table",    "number": 16, "label": "Chemical Table",
+     "description": "Exact chemical composition for the actual grade (e.g. SS304, SS316).",
+     "group": "Product Tables",  "auto": "partial"},
+    {"id": "mechanical_table",  "number": 17, "label": "Mechanical Properties",
+     "description": "Accurate mechanical properties for the specific grade.",
+     "group": "Product Tables",  "auto": "partial"},
+    {"id": "equivalent_table",  "number": 18, "label": "Equivalent Grades",
+     "description": "Correct equivalency table for the grade. No dummy/unrelated standards.",
+     "group": "Product Tables",  "auto": "partial"},
+    {"id": "size_table",        "number": 19, "label": "Size / Dimension Table",
+     "description": "Exact size/dimension table from official reference or datasheet.",
+     "group": "Product Tables",  "auto": "partial"},
+    {"id": "tech_spec_tab",     "number": 20, "label": "Technical Specification Tab",
+     "description": "Spec table from a valid source/datasheet for the exact product.",
+     "group": "Product Tables",  "auto": "partial"},
+
+    # User-facing content (21-24)
+    {"id": "applications",      "number": 21, "label": "Applications",
+     "description": "Industry-specific applications, not generic lists.",
+     "group": "Page Content",    "auto": "partial"},
+    {"id": "cta_button",        "number": 22, "label": "CTA Button",
+     "description": "CTA button present with a valid working link.",
+     "group": "Page Content",    "auto": "partial"},
+    {"id": "faqs",              "number": 23, "label": "FAQs",
+     "description": "FAQ section with clear questions and technically-accurate answers.",
+     "group": "Page Content",    "auto": "partial"},
+    {"id": "contact_info",      "number": 24, "label": "Contact Info",
+     "description": "Complete and correct contact details.",
+     "group": "Page Content",    "auto": "full"},
+
+    # Technical (25-27)
+    {"id": "schema",            "number": 25, "label": "Schema Markup",
+     "description": "Schema.org JSON-LD present, valid, and matching expected types.",
+     "group": "Technical",       "auto": "full"},
+    {"id": "mobile_friendly",   "number": 26, "label": "Mobile Friendly",
+     "description": "Viewport set + responsive CSS hints. Verify visually on real devices.",
+     "group": "Technical",       "auto": "partial"},
+    {"id": "inquiry_form",      "number": 27, "label": "Inquiry Form",
+     "description": "Form with email field and valid action. Manually verify it actually delivers.",
+     "group": "Technical",       "auto": "partial"},
+]
+
+# Quick lookup: id -> entry
+CHECKLIST_BY_ID = {c["id"]: c for c in CHECKLIST}
+
+# Categories that should never be reported as "Pass" without a real signal —
+# i.e. if there are zero issues for this checkpoint, it's because we couldn't
+# auto-check it, not because the page passed. The UI shows these as "Manual review".
+MANUAL_ONLY_CHECKPOINTS = {c["id"] for c in CHECKLIST if c["auto"] == "manual"}
+
+
+# ============================================================
 #  Helpers
 # ============================================================
 
@@ -179,14 +302,23 @@ def detect_industry(url: str, text: str) -> str:
     return best if scores.get(best, 0) > 0 else "generic"
 
 
-def _iss(category: str, severity: str, title: str, description: str, fix: str = "") -> dict:
-    """Build an issue dict."""
+def _iss(category: str, severity: str, title: str, description: str,
+         fix: str = "", checkpoint_id: str = "") -> dict:
+    """
+    Build an issue dict.
+
+    `checkpoint_id` ties the issue back to one of the 27 CHECKLIST items.
+    Pass an ID like "page_title", "h1_tag", "image_alt", etc.
+    Empty string means "not associated with a specific checkpoint" (rare;
+    a few legacy informational items don't map cleanly).
+    """
     return {
         "category": category,
         "severity": severity,
         "title": title,
         "description": description,
         "fix": fix,
+        "checkpoint_id": checkpoint_id,
     }
 
 
@@ -197,6 +329,106 @@ def score_color(s: int) -> tuple[str, str]:
     if s >= 55:
         return ('#7b341e', '#feebc8')
     return ('#742a2a', '#fed7d7')
+
+
+def build_checklist_view(issues: list[dict], deep_audit: bool = False,
+                         target_keyword: str = '') -> list[dict]:
+    """
+    Build the 27-checkpoint status view for a single page.
+
+    For each CHECKLIST item, returns:
+      {id, number, label, description, group, status, severity, issue_count, notes}
+
+    Status values:
+      'pass'    : no issues raised for this checkpoint
+      'fail'    : at least one critical/warning issue
+      'info'    : only info-level issues
+      'manual'  : checkpoint is auto: 'manual' (always needs human review)
+      'skipped' : auto: 'deep' but deep_audit=False; or auto: 'partial' with
+                  no signal because optional input (e.g. target_keyword) wasn't given
+
+    The severity field is the worst severity among the issues for that
+    checkpoint: 'critical' > 'warning' > 'info'.
+    """
+    # Group issues by checkpoint_id
+    by_cp: dict[str, list[dict]] = defaultdict(list)
+    for iss_dict in issues:
+        cid = iss_dict.get('checkpoint_id', '')
+        if cid:
+            by_cp[cid].append(iss_dict)
+
+    sev_rank = {'critical': 3, 'warning': 2, 'info': 1}
+    out: list[dict] = []
+
+    for cp in CHECKLIST:
+        cid = cp['id']
+        related = by_cp.get(cid, [])
+
+        # Determine status
+        if cp['auto'] == 'manual':
+            status = 'manual'
+            severity = 'info'
+            notes = 'Cannot be checked automatically — verify manually.'
+        elif cp['auto'] == 'deep' and not deep_audit:
+            status = 'skipped'
+            severity = 'info'
+            notes = 'Skipped (deep audit not enabled). Run with "Deep audit" to check.'
+        elif cid == 'keyword_usage' and not target_keyword:
+            status = 'skipped'
+            severity = 'info'
+            notes = 'No target keyword provided — fill the "Target keyword" field on Step 1.'
+        elif not related:
+            status = 'pass'
+            severity = 'info'
+            notes = ''
+        else:
+            # Pick worst severity
+            worst_rank = max(sev_rank.get(i['severity'], 1) for i in related)
+            severity = next(s for s, r in sev_rank.items() if r == worst_rank)
+            status = 'info' if severity == 'info' else 'fail'
+            # Notes = first issue's title (most relevant)
+            notes = related[0]['title']
+
+        out.append({
+            'id': cid,
+            'number': cp['number'],
+            'label': cp['label'],
+            'description': cp['description'],
+            'group': cp['group'],
+            'auto': cp['auto'],
+            'status': status,
+            'severity': severity,
+            'issue_count': len(related),
+            'notes': notes,
+        })
+
+    return out
+
+
+def aggregate_checklist(results: list[dict]) -> list[dict]:
+    """
+    Aggregate per-page checklists into a site-wide view.
+    For each checkpoint: count of pages passing / failing / skipped / manual.
+
+    Used by the report's "site-wide checklist" panel.
+    """
+    counts: dict[str, dict] = {
+        cp['id']: {
+            'id': cp['id'], 'number': cp['number'], 'label': cp['label'],
+            'group': cp['group'], 'description': cp['description'],
+            'pass': 0, 'fail': 0, 'info': 0, 'manual': 0, 'skipped': 0,
+            'total': 0,
+        }
+        for cp in CHECKLIST
+    }
+    for r in results:
+        for entry in r.get('checklist', []):
+            cid = entry.get('id')
+            if cid in counts:
+                counts[cid][entry.get('status', 'pass')] += 1
+                counts[cid]['total'] += 1
+
+    return [counts[cp['id']] for cp in CHECKLIST]
 
 
 # ============================================================
@@ -350,11 +582,27 @@ class Crawler:
 class Analyzer:
     """
     Analyse a fetched page for SEO, HTML, performance, content, and
-    industry-specific issues.
+    industry-specific issues, plus the 27-point checklist.
+
+    Options:
+      industry         : 'auto' | 'metals' | 'ecommerce' | 'saas' | 'healthcare'
+                         | 'realestate' | 'generic'
+      target_keyword   : Optional. If provided, runs keyword-density and
+                         keyword-placement checks (checklist item 13).
+      deep_audit       : If True, runs slow checks that require extra
+                         network requests:
+                           - Image size HEAD requests (item 11)
+                           - CTA link validation (item 22)
+                         Default False because these can add minutes to a
+                         100-page audit.
     """
 
-    def __init__(self, industry: str = 'auto'):
+    def __init__(self, industry: str = 'auto',
+                 target_keyword: str = '',
+                 deep_audit: bool = False):
         self.industry = industry
+        self.target_keyword = (target_keyword or '').strip()
+        self.deep_audit = bool(deep_audit)
 
     def analyze(self, pg: dict) -> dict:
         url = pg.get('url', '')
@@ -382,6 +630,24 @@ class Analyzer:
         issues += r['i']; scores['performance'] = r['s']
         r = self._check_content(soup, text, ind)
         issues += r['i']; scores['content'] = r['s']
+
+        # NEW: Checklist-driven checks (run for every page)
+        issues += self._check_url_structure(url)
+        issues += self._check_breadcrumbs(soup)
+        issues += self._check_image_filenames(soup)
+        issues += self._check_internal_linking(soup, url)
+        issues += self._check_keyword_usage(soup, text, self.target_keyword)
+        issues += self._check_product_tables(soup, text)
+        issues += self._check_applications(soup, text, ind)
+        issues += self._check_cta_buttons(soup, url, deep=self.deep_audit)
+        issues += self._check_faqs(soup, text)
+        issues += self._check_schema_validation(soup)
+        issues += self._check_responsive(soup, html)
+        issues += self._check_inquiry_form(soup)
+
+        # Deep-audit-only network checks
+        if self.deep_audit:
+            issues += self._check_image_weights(soup, url)
 
         # Industry-specific checks
         if ind == 'metals':
@@ -413,11 +679,16 @@ class Analyzer:
         title = title_tag.get_text(strip=True) if title_tag else ''
         grades_found = list(set(GRADE_RE.findall(text))) if ind == 'metals' else []
 
+        # Build the per-page checklist view: status of all 27 checkpoints
+        checklist_view = build_checklist_view(issues, deep_audit=self.deep_audit,
+                                              target_keyword=self.target_keyword)
+
         return {
             'url': url, 'title': title, 'issues': issues, 'scores': scores,
             'word_count': len(text.split()), 'grades_found': grades_found,
             'response_time': pg.get('response_time', 0),
             'industry': ind, 'status': pg.get('status', 200),
+            'checklist': checklist_view,
         }
 
     # ---------- SEO ----------
@@ -430,17 +701,20 @@ class Analyzer:
         if not title:
             issues.append(_iss('seo', 'critical', 'Title tag missing',
                                'Most basic SEO element. Search results show this.',
-                               '<title>Product Name | Brand</title>'))
+                               '<title>Product Name | Brand</title>',
+                               checkpoint_id='page_title'))
             score -= 25
         elif len(title) < 30:
             issues.append(_iss('seo', 'warning', f'Title too short ({len(title)} chars)',
                                '50-60 characters is ideal for search snippets.',
-                               f'Expand: "{title} | Grade | Company"'))
+                               f'Expand: "{title} | Grade | Company"',
+                               checkpoint_id='page_title'))
             score -= 10
         elif len(title) > 65:
             issues.append(_iss('seo', 'warning', f'Title too long ({len(title)} chars)',
                                'Google truncates after ~65 characters.',
-                               'Trim to 55-60 chars'))
+                               'Trim to 55-60 chars',
+                               checkpoint_id='page_title'))
             score -= 5
 
         md = soup.find('meta', attrs={'name': re.compile(r'^description$', re.I)})
@@ -448,47 +722,55 @@ class Analyzer:
         if not desc:
             issues.append(_iss('seo', 'critical', 'Meta description missing',
                                'No search snippet will be shown.',
-                               '<meta name="description" content="150 char description...">'))
+                               '<meta name="description" content="150 char description...">',
+                               checkpoint_id='meta_description'))
             score -= 20
         elif len(desc) < 80:
             issues.append(_iss('seo', 'warning', f'Meta description too short ({len(desc)} chars)',
                                '120-158 chars is ideal.',
-                               f'Expand: "{desc[:50]}..."'))
+                               f'Expand: "{desc[:50]}..."',
+                               checkpoint_id='meta_description'))
             score -= 8
         elif len(desc) > 160:
             issues.append(_iss('seo', 'info', f'Meta description too long ({len(desc)} chars)',
-                               'Google truncates after ~158 chars.', 'Trim it down'))
+                               'Google truncates after ~158 chars.', 'Trim it down',
+                               checkpoint_id='meta_description'))
             score -= 3
 
         h1s = soup.find_all('h1')
         if not h1s:
             issues.append(_iss('seo', 'critical', 'H1 missing',
                                'Every page needs one main heading.',
-                               '<h1>Main Page Heading</h1>'))
+                               '<h1>Main Page Heading</h1>',
+                               checkpoint_id='h1_tag'))
             score -= 20
         elif len(h1s) > 1:
             issues.append(_iss('seo', 'warning', f'{len(h1s)} H1 tags (only 1 needed)',
                                'Multiple H1s confuse search engines.',
-                               'Convert extra H1s to H2 or H3'))
+                               'Convert extra H1s to H2 or H3',
+                               checkpoint_id='h1_tag'))
             score -= 10
 
         if not soup.find('link', rel='canonical'):
             issues.append(_iss('seo', 'warning', 'Canonical link missing',
                                'Risk of duplicate content penalties.',
-                               f'<link rel="canonical" href="{url}">'))
+                               f'<link rel="canonical" href="{url}">',
+                               checkpoint_id='canonical'))
             score -= 8
 
         if not soup.find('meta', property='og:title'):
             issues.append(_iss('seo', 'info', 'Open Graph tags missing',
                                'No social media share preview.',
                                '<meta property="og:title" content="...">\n'
-                               '<meta property="og:image" content="...">'))
+                               '<meta property="og:image" content="...">',
+                               checkpoint_id='schema'))
             score -= 5
 
         if not soup.find('script', type='application/ld+json'):
             issues.append(_iss('seo', 'warning', 'Schema markup missing',
                                'No rich snippets in search results.',
-                               '{"@context":"https://schema.org","@type":"WebPage","name":"..."}'))
+                               '{"@context":"https://schema.org","@type":"WebPage","name":"..."}',
+                               checkpoint_id='schema'))
             score -= 10
 
         no_alt = [i for i in soup.find_all('img') if not i.get('alt', '').strip()]
@@ -496,20 +778,23 @@ class Analyzer:
             issues.append(_iss('seo', 'warning',
                                f'{len(no_alt)} images without alt text',
                                'Image SEO and accessibility are reduced.',
-                               '<img src="..." alt="Descriptive text">'))
+                               '<img src="..." alt="Descriptive text">',
+                               checkpoint_id='image_alt'))
             score -= min(15, len(no_alt) * 2)
 
         rob = soup.find('meta', attrs={'name': re.compile(r'^robots$', re.I)})
         if rob and 'noindex' in (rob.get('content', '') or '').lower():
             issues.append(_iss('seo', 'critical', 'Page is set to NOINDEX',
                                'Google will NOT index this page!',
-                               'Remove noindex or change to "index,follow"'))
+                               'Remove noindex or change to "index,follow"',
+                               checkpoint_id='indexability'))
             score -= 40
 
         if not soup.find_all('h2'):
             issues.append(_iss('seo', 'info', 'No H2 headings',
                                'Content structure is weak.',
-                               '<h2>Section Heading</h2>'))
+                               '<h2>Section Heading</h2>',
+                               checkpoint_id='subheadings'))
             score -= 5
 
         return {'i': issues, 's': max(0, score)}
@@ -522,13 +807,15 @@ class Analyzer:
         if not soup.find('meta', charset=True):
             issues.append(_iss('html', 'warning', 'Charset missing',
                                'Encoding issues may occur.',
-                               '<meta charset="UTF-8">'))
+                               '<meta charset="UTF-8">',
+                               checkpoint_id='mobile_friendly'))
             score -= 8
 
         if not soup.find('meta', attrs={'name': 'viewport'}):
             issues.append(_iss('html', 'critical', 'Viewport meta missing',
                                'Mobile rendering will be broken.',
-                               '<meta name="viewport" content="width=device-width, initial-scale=1.0">'))
+                               '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+                               checkpoint_id='mobile_friendly'))
             score -= 20
 
         if not url.startswith('https'):
@@ -547,7 +834,8 @@ class Analyzer:
             if not f.get('action', ''):
                 issues.append(_iss('html', 'warning', 'Form action missing',
                                    'Form will not submit anywhere.',
-                                   '<form action="/submit" method="POST">'))
+                                   '<form action="/submit" method="POST">',
+                                   checkpoint_id='inquiry_form'))
                 score -= 10
                 break
 
@@ -618,7 +906,8 @@ class Analyzer:
             issues.append(_iss('content', 'warning',
                                'Contact info missing (no phone/email visible)',
                                'Buyers cannot contact you.',
-                               'Display phone and email clearly'))
+                               'Display phone and email clearly',
+                               checkpoint_id='contact_info'))
             score -= 15
 
         ctas = ['contact', 'enquire', 'quote', 'buy now', 'order', 'call us',
@@ -626,10 +915,631 @@ class Analyzer:
         if not any(c in text.lower() for c in ctas):
             issues.append(_iss('content', 'warning', 'No CTA detected',
                                'Users have no clear next step.',
-                               'Add: "Get Quote" / "Contact Us" / "Enquire Now"'))
+                               'Add: "Get Quote" / "Contact Us" / "Enquire Now"',
+                               checkpoint_id='cta_button'))
             score -= 10
 
         return {'i': issues, 's': max(0, score)}
+
+    # ============================================================
+    #  NEW CHECKLIST-DRIVEN CHECKS
+    #  Each method covers one or more of the 27 checkpoints.
+    # ============================================================
+
+    # ---------- Checklist #1: URL Structure ----------
+    def _check_url_structure(self, url) -> list[dict]:
+        """
+        Heuristics for "clean, readable, keyword-rich URL":
+          - No URL params like ?id=12345
+          - Reasonable length (< 100 chars)
+          - Lowercase
+          - Hyphens, not underscores or spaces
+          - Not too deep (< 5 path segments)
+        """
+        issues: list[dict] = []
+        parsed = urlparse(url)
+        path = parsed.path or '/'
+
+        if parsed.query and re.search(r'(\?|&)(id|p|q|page)=\d+', url, re.I):
+            issues.append(_iss('seo', 'warning', 'URL uses query parameters',
+                               'Database-style URLs (?id=123) are bad for SEO.',
+                               'Rewrite to clean URLs like /products/ss-304-pipe',
+                               checkpoint_id='url_structure'))
+
+        if len(url) > 100:
+            issues.append(_iss('seo', 'info', f'URL very long ({len(url)} chars)',
+                               'Long URLs are harder to share and rank slightly worse.',
+                               'Aim for under 80 characters where possible',
+                               checkpoint_id='url_structure'))
+
+        if '_' in path:
+            issues.append(_iss('seo', 'info', 'Underscores in URL',
+                               'Google treats hyphens as word separators, not underscores.',
+                               'Use ss-304-pipe.html, not ss_304_pipe.html',
+                               checkpoint_id='url_structure'))
+
+        if any(c.isupper() for c in path):
+            issues.append(_iss('seo', 'info', 'Uppercase letters in URL',
+                               'Mixed-case URLs cause duplicate-content risks.',
+                               'Use lowercase URLs only',
+                               checkpoint_id='url_structure'))
+
+        if path.count('/') > 5:
+            issues.append(_iss('seo', 'info', f'URL deeply nested ({path.count("/")} levels)',
+                               'Deeply-nested URLs rank worse and confuse users.',
+                               'Flatten to 2-3 levels: /products/ss-304-pipe',
+                               checkpoint_id='url_structure'))
+
+        return issues
+
+    # ---------- Checklist #7: Breadcrumbs ----------
+    def _check_breadcrumbs(self, soup) -> list[dict]:
+        """
+        Detect breadcrumbs by either:
+          - BreadcrumbList JSON-LD schema
+          - Visible breadcrumb HTML (nav with class containing "breadcrumb",
+            or ol/ul with "breadcrumb" in class)
+        """
+        issues: list[dict] = []
+
+        # JSON-LD BreadcrumbList
+        has_schema = False
+        for s in soup.find_all('script', type='application/ld+json'):
+            content = s.string or ''
+            if 'BreadcrumbList' in content:
+                has_schema = True
+                break
+
+        # Visible breadcrumb HTML
+        has_visible = bool(
+            soup.find('nav', attrs={'class': re.compile(r'breadcrumb', re.I)}) or
+            soup.find(['ol', 'ul'], attrs={'class': re.compile(r'breadcrumb', re.I)}) or
+            soup.find(attrs={'aria-label': re.compile(r'breadcrumb', re.I)})
+        )
+
+        if not has_visible and not has_schema:
+            issues.append(_iss('seo', 'warning', 'Breadcrumbs missing',
+                               'Breadcrumbs help users and Google understand site structure.',
+                               'Add <nav aria-label="breadcrumb"> with links + BreadcrumbList JSON-LD',
+                               checkpoint_id='breadcrumbs'))
+        elif not has_schema:
+            issues.append(_iss('seo', 'info', 'Breadcrumb schema missing',
+                               'Visible breadcrumbs found but no BreadcrumbList schema.',
+                               'Add BreadcrumbList JSON-LD so Google shows them in search results',
+                               checkpoint_id='breadcrumbs'))
+        return issues
+
+    # ---------- Checklist #9: Image File Names ----------
+    def _check_image_filenames(self, soup) -> list[dict]:
+        """
+        Flag generic / camera-default image filenames:
+          - IMG_1234, DSC_1234, photo123, image1, 1.jpg, etc.
+          - All-numeric or random-string filenames
+        """
+        issues: list[dict] = []
+        bad_patterns = re.compile(
+            r'^(img[_\-]?\d+|dsc[_\-]?\d+|photo\d*|image\d+|pic\d+|'
+            r'\d+|untitled|screenshot|temp|new|copy|file)$', re.I
+        )
+        bad_count = 0
+        examples: list[str] = []
+
+        for img in soup.find_all('img'):
+            src = (img.get('src') or '').strip()
+            if not src or src.startswith('data:'):
+                continue
+            # Extract just the filename without extension
+            fname = src.rsplit('/', 1)[-1].rsplit('.', 1)[0]
+            if bad_patterns.match(fname):
+                bad_count += 1
+                if len(examples) < 3:
+                    examples.append(fname)
+
+        if bad_count:
+            issues.append(_iss('seo', 'warning',
+                               f'{bad_count} images have generic filenames',
+                               f'Filenames like "{", ".join(examples)}" miss SEO opportunity.',
+                               'Rename to descriptive filenames: ss-304-seamless-pipe.jpg',
+                               checkpoint_id='image_filename'))
+        return issues
+
+    # ---------- Checklist #11: Image Optimization (deep mode only) ----------
+    def _check_image_weights(self, soup, base_url) -> list[dict]:
+        """
+        For each image on the page, send a HEAD request to check size.
+        SLOW: adds ~1 request per image. Only runs when deep_audit=True.
+
+        Limits: max 30 images per page, 5s timeout each, 3s parallel pool.
+        """
+        issues: list[dict] = []
+        srcs: list[str] = []
+        for img in soup.find_all('img'):
+            src = (img.get('src') or '').strip()
+            if not src or src.startswith('data:'):
+                continue
+            full = urljoin(base_url, src)
+            if full not in srcs:
+                srcs.append(full)
+            if len(srcs) >= 30:
+                break  # cap at 30 images
+
+        if not srcs:
+            return issues
+
+        oversized: list[tuple[str, int]] = []
+        try:
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                futs = {ex.submit(self._image_size, u): u for u in srcs}
+                for f in as_completed(futs, timeout=20):
+                    try:
+                        u = futs[f]
+                        size = f.result()
+                        if size and size > 100 * 1024:  # > 100 KB
+                            oversized.append((u, size))
+                    except Exception:
+                        continue
+        except Exception:
+            pass  # don't fail the audit if HEAD requests are blocked
+
+        if oversized:
+            top3 = sorted(oversized, key=lambda x: -x[1])[:3]
+            example = ', '.join(f'{u.split("/")[-1]} ({s // 1024}KB)' for u, s in top3)
+            issues.append(_iss('performance', 'warning',
+                               f'{len(oversized)} images over 100 KB',
+                               f'Heavy images slow page load. Largest: {example}',
+                               'Compress with TinyPNG / Squoosh, convert to WebP',
+                               checkpoint_id='image_weight'))
+        return issues
+
+    def _image_size(self, url: str) -> Optional[int]:
+        """HEAD request returning content length, or None on failure."""
+        try:
+            r = requests.head(url, timeout=5, allow_redirects=True, verify=False)
+            cl = r.headers.get('content-length')
+            return int(cl) if cl else None
+        except Exception:
+            return None
+
+    # ---------- Checklist #12: Internal Linking ----------
+    def _check_internal_linking(self, soup, base_url) -> list[dict]:
+        """
+        Count internal links (same-domain anchors with content), excluding
+        navigation-only links (very short text, # anchors, mailto:, tel:).
+        """
+        issues: list[dict] = []
+        try:
+            base_domain = urlparse(base_url).netloc
+        except Exception:
+            return issues
+
+        substantive_links = 0
+        for a in soup.find_all('a', href=True):
+            href = a['href'].strip()
+            if not href or href.startswith(('#', 'mailto:', 'tel:', 'javascript:')):
+                continue
+            text = a.get_text(strip=True)
+            if len(text) < 4:  # skip "Home", "→", etc — too short to be content links
+                continue
+            try:
+                full = urljoin(base_url, href)
+                if urlparse(full).netloc == base_domain:
+                    substantive_links += 1
+            except Exception:
+                continue
+
+        if substantive_links < 3:
+            issues.append(_iss('seo', 'warning',
+                               f'Few internal links ({substantive_links})',
+                               'Pages should link to related products / categories for SEO.',
+                               'Add 5-10 contextual links to related pages',
+                               checkpoint_id='internal_linking'))
+        return issues
+
+    # ---------- Checklist #13: Keyword Usage ----------
+    def _check_keyword_usage(self, soup, text, target_keyword: str) -> list[dict]:
+        """
+        If user provided a target keyword:
+         - Check it's in the page title
+         - Check it's in the H1
+         - Check density 0.5%-3% (warn if zero, warn if >3% = stuffed)
+         - Check it's in URL slug
+        If no keyword provided, this method is skipped by analyze().
+        """
+        issues: list[dict] = []
+        if not target_keyword or not text:
+            return issues
+
+        kw = target_keyword.lower().strip()
+        text_lower = text.lower()
+
+        # Density
+        words = re.findall(r'\b\w+\b', text_lower)
+        kw_count = len(re.findall(r'\b' + re.escape(kw) + r'\b', text_lower))
+        density = (kw_count / max(1, len(words))) * 100
+
+        if kw_count == 0:
+            issues.append(_iss('content', 'critical',
+                               f'Target keyword "{target_keyword}" not in page content',
+                               'The page does not mention the keyword you are targeting.',
+                               f'Naturally include "{target_keyword}" 3-5 times in the body',
+                               checkpoint_id='keyword_usage'))
+        elif density > 3:
+            issues.append(_iss('content', 'warning',
+                               f'Keyword over-used ({density:.1f}% density)',
+                               'Google penalises keyword stuffing.',
+                               'Reduce to 1-3% density (around 1 mention per 50-100 words)',
+                               checkpoint_id='keyword_usage'))
+        elif density < 0.3:
+            issues.append(_iss('content', 'info',
+                               f'Keyword sparse ({density:.2f}% density, {kw_count} mentions)',
+                               'Slightly more keyword usage may help.',
+                               f'Aim for 0.5-2% density',
+                               checkpoint_id='keyword_usage'))
+
+        # Title
+        title_tag = soup.find('title')
+        title = title_tag.get_text(strip=True).lower() if title_tag else ''
+        if title and kw not in title:
+            issues.append(_iss('seo', 'warning',
+                               f'Keyword "{target_keyword}" not in page title',
+                               'Title is the strongest on-page SEO signal.',
+                               f'Add "{target_keyword}" to the <title> tag',
+                               checkpoint_id='keyword_usage'))
+
+        # H1
+        h1 = soup.find('h1')
+        h1_text = h1.get_text(strip=True).lower() if h1 else ''
+        if h1_text and kw not in h1_text:
+            issues.append(_iss('seo', 'info',
+                               f'Keyword "{target_keyword}" not in H1',
+                               'H1 should reinforce the main keyword.',
+                               f'Include "{target_keyword}" in the H1 heading',
+                               checkpoint_id='keyword_usage'))
+
+        return issues
+
+    # ---------- Checklist #15, #19, #20: Specifications / Size / Tech-spec tables ----------
+    def _check_product_tables(self, soup, text) -> list[dict]:
+        """
+        Detect presence of:
+          - Specifications table (sizes, grades, standards)
+          - Size / dimension table
+          - Technical specification tab/section
+        We look at table headers and section headings.
+        """
+        issues: list[dict] = []
+        text_lower = text.lower()
+
+        # Pull all table header text
+        table_headers: list[str] = []
+        for table in soup.find_all('table'):
+            for th in table.find_all(['th', 'td'])[:8]:  # first row usually has headers
+                table_headers.append(th.get_text(strip=True).lower())
+
+        all_headers = ' '.join(table_headers)
+
+        # #15: Specifications table — should have sizes/grades/standards keywords
+        spec_signals = ['size', 'grade', 'standard', 'specification', 'spec',
+                        'thickness', 'diameter', 'schedule']
+        if not soup.find_all('table'):
+            issues.append(_iss('content', 'warning', 'No tables on page',
+                               'Product pages need at least one specification table.',
+                               'Add a table with sizes, grades, and standards',
+                               checkpoint_id='specifications'))
+        elif not any(s in all_headers for s in spec_signals):
+            issues.append(_iss('content', 'info',
+                               'Tables present but no specifications table detected',
+                               'Found tables but none with size/grade/standard headers.',
+                               'Add a specifications table with size, grade, standard columns',
+                               checkpoint_id='specifications'))
+
+        # #19: Size/dimension table — separate check
+        size_signals = ['size', 'dimension', 'od', 'id ', 'inch', 'mm', 'nb',
+                        'wall thickness', 'diameter']
+        has_size_table = (
+            'dimension' in text_lower or 'size chart' in text_lower or
+            any(s in all_headers for s in ['od', 'id ', 'nb', 'mm', 'inch'])
+        )
+        if soup.find_all('table') and not has_size_table:
+            issues.append(_iss('content', 'info', 'Size / dimension table missing',
+                               'Industrial product pages should show exact dimensions.',
+                               'Add a size table: NB | OD | Wall Thickness | Schedule',
+                               checkpoint_id='size_table'))
+
+        # #20: Technical specification tab — look for Spec Sheet / Datasheet / Tech Spec
+        tech_signals = ['datasheet', 'data sheet', 'technical specification',
+                        'spec sheet', 'specification sheet']
+        if not any(s in text_lower for s in tech_signals):
+            issues.append(_iss('content', 'info',
+                               'No technical specification / datasheet reference',
+                               'Buyers expect a downloadable datasheet or detailed tech spec section.',
+                               'Add a "Datasheet" link or "Technical Specification" tab',
+                               checkpoint_id='tech_spec_tab'))
+
+        return issues
+
+    # ---------- Checklist #21: Applications ----------
+    def _check_applications(self, soup, text, industry) -> list[dict]:
+        """
+        Detect an Applications section. We can check:
+          - Heading containing "applications" / "industries" / "uses"
+          - List items in that section
+        We can't judge "industry-specific" without LLM — so we just verify
+        a section exists and isn't a tiny placeholder.
+        """
+        issues: list[dict] = []
+        text_lower = text.lower()
+
+        # Look for an Applications-style heading
+        app_heading = None
+        for h in soup.find_all(['h2', 'h3', 'h4']):
+            ht = h.get_text(strip=True).lower()
+            if any(kw in ht for kw in ['application', 'industries', 'usage', 'uses', 'where used']):
+                app_heading = h
+                break
+
+        if not app_heading and 'application' not in text_lower:
+            issues.append(_iss('content', 'warning', 'No Applications section',
+                               'Buyers want to know what the product is used for.',
+                               'Add an "Applications" section listing industries served',
+                               checkpoint_id='applications'))
+            return issues
+
+        # If heading found, check the following list has at least 3 items
+        if app_heading:
+            # Look for the next ul/ol after this heading
+            next_list = app_heading.find_next(['ul', 'ol'])
+            if next_list:
+                items = next_list.find_all('li')
+                if len(items) < 3:
+                    issues.append(_iss('content', 'info',
+                                       f'Applications list very short ({len(items)} items)',
+                                       'Aim for 5-10 specific applications.',
+                                       'List specific industries / use cases',
+                                       checkpoint_id='applications'))
+
+        return issues
+
+    # ---------- Checklist #22: CTA Button (deep mode validates link) ----------
+    def _check_cta_buttons(self, soup, base_url, deep: bool) -> list[dict]:
+        """
+        Find CTA buttons (anchor tags with button-ish classes or CTA text).
+        In deep mode, send HEAD requests to validate links work.
+        """
+        issues: list[dict] = []
+        cta_keywords = re.compile(
+            r'\b(get\s+quote|enquire|enquiry|contact\s+us|request|book|buy|order|'
+            r'download|free\s+trial|get\s+started|sign\s+up|subscribe|whatsapp|call\s+now)\b',
+            re.I
+        )
+
+        ctas: list = []
+        # Anchors with button class or CTA text
+        for a in soup.find_all('a', href=True):
+            text = a.get_text(strip=True)
+            classes = ' '.join(a.get('class', [])).lower()
+            if 'btn' in classes or 'button' in classes or cta_keywords.search(text):
+                ctas.append(a)
+                if len(ctas) >= 5:
+                    break
+
+        if not ctas:
+            issues.append(_iss('content', 'warning', 'No CTA button found',
+                               'Page has no clear call-to-action.',
+                               'Add a primary CTA: "Get Quote" / "Enquire Now" / "Contact Us"',
+                               checkpoint_id='cta_button'))
+            return issues
+
+        # Validate hrefs (always)
+        for cta in ctas:
+            href = (cta.get('href') or '').strip()
+            text = cta.get_text(strip=True)[:30]
+
+            if href in ('#', '', 'javascript:void(0)'):
+                issues.append(_iss('content', 'critical',
+                                   f'CTA "{text}" has empty/dead link',
+                                   'CTA button does not go anywhere.',
+                                   f'Set href to a real URL like /contact or /quote',
+                                   checkpoint_id='cta_button'))
+
+        # Deep mode: HEAD-check each CTA's target URL
+        if deep:
+            for cta in ctas:
+                href = (cta.get('href') or '').strip()
+                if not href or href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+                    continue
+                full = urljoin(base_url, href)
+                try:
+                    r = requests.head(full, timeout=5, allow_redirects=True, verify=False)
+                    if r.status_code >= 400:
+                        text = cta.get_text(strip=True)[:30]
+                        issues.append(_iss('content', 'critical',
+                                           f'CTA "{text}" link returns {r.status_code}',
+                                           f'Target URL is broken: {full}',
+                                           'Fix or update the link',
+                                           checkpoint_id='cta_button'))
+                except Exception:
+                    pass  # don't fail audit if HEAD blocks
+
+        return issues
+
+    # ---------- Checklist #23: FAQs ----------
+    def _check_faqs(self, soup, text) -> list[dict]:
+        """
+        Detect FAQs by:
+          - FAQPage / Question schema
+          - Heading text containing "FAQ" / "Frequently Asked"
+          - Accordion patterns (details/summary tags)
+        """
+        issues: list[dict] = []
+
+        # Schema check
+        has_faq_schema = False
+        for s in soup.find_all('script', type='application/ld+json'):
+            content = s.string or ''
+            if 'FAQPage' in content or '"@type":"Question"' in content.replace(' ', ''):
+                has_faq_schema = True
+                break
+
+        # Heading check
+        faq_heading = False
+        for h in soup.find_all(['h2', 'h3', 'h4']):
+            if re.search(r'\bfaq|frequently\s+asked\b', h.get_text(strip=True), re.I):
+                faq_heading = True
+                break
+
+        # Accordion check (semantic HTML5)
+        has_accordion = bool(soup.find('details'))
+
+        if not (has_faq_schema or faq_heading or has_accordion):
+            issues.append(_iss('content', 'info', 'No FAQ section',
+                               'FAQ pages capture long-tail search queries and rank well.',
+                               'Add 5-10 common product questions with FAQPage schema',
+                               checkpoint_id='faqs'))
+        elif (faq_heading or has_accordion) and not has_faq_schema:
+            issues.append(_iss('seo', 'info', 'FAQ section without FAQPage schema',
+                               'Visible FAQ section but no schema — losing rich-result eligibility.',
+                               'Wrap FAQ in FAQPage JSON-LD for Google rich snippets',
+                               checkpoint_id='faqs'))
+        return issues
+
+    # ---------- Checklist #25: Schema validation ----------
+    def _check_schema_validation(self, soup) -> list[dict]:
+        """
+        Beyond presence, validate that JSON-LD parses cleanly and contains
+        sensible @type values. Doesn't check schema correctness exhaustively
+        (that requires schema.org's own validator) — just basic sanity.
+        """
+        issues: list[dict] = []
+        import json
+
+        scripts = soup.find_all('script', type='application/ld+json')
+        if not scripts:
+            return issues  # already flagged by _check_seo
+
+        broken = 0
+        types_found: list[str] = []
+        for s in scripts:
+            content = s.string or ''
+            if not content.strip():
+                broken += 1
+                continue
+            try:
+                data = json.loads(content)
+                # Could be a single object or a list
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    if isinstance(item, dict):
+                        t = item.get('@type', '')
+                        if t:
+                            types_found.append(t if isinstance(t, str) else str(t))
+            except (json.JSONDecodeError, TypeError):
+                broken += 1
+
+        if broken:
+            issues.append(_iss('seo', 'warning',
+                               f'{broken} JSON-LD blocks have parse errors',
+                               'Broken schema is invisible to search engines.',
+                               'Validate at search.google.com/test/rich-results',
+                               checkpoint_id='schema'))
+
+        return issues
+
+    # ---------- Checklist #26: Mobile / Responsive ----------
+    def _check_responsive(self, soup, html) -> list[dict]:
+        """
+        Beyond viewport meta (already checked in _check_html), look for
+        responsive CSS hints in inline/linked styles.
+        """
+        issues: list[dict] = []
+
+        # Check viewport content is sensible (not just present)
+        vp = soup.find('meta', attrs={'name': 'viewport'})
+        if vp:
+            content = vp.get('content', '')
+            if 'width=device-width' not in content:
+                issues.append(_iss('html', 'warning',
+                                   'Viewport meta lacks width=device-width',
+                                   'Mobile sizing will be broken.',
+                                   '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+                                   checkpoint_id='mobile_friendly'))
+            if 'user-scalable=no' in content or 'maximum-scale=1' in content:
+                issues.append(_iss('html', 'info', 'Viewport disables zoom',
+                                   'Disabling zoom is bad for accessibility.',
+                                   'Remove user-scalable=no / maximum-scale=1',
+                                   checkpoint_id='mobile_friendly'))
+
+        # Look for media queries in any inline <style> blocks
+        has_media_query = '@media' in html
+
+        # Look for common responsive frameworks
+        responsive_hints = ['bootstrap', 'tailwind', 'foundation', 'bulma', 'mui',
+                            'flexbox', 'grid-template']
+        has_responsive_lib = any(h in html.lower() for h in responsive_hints)
+
+        if not has_media_query and not has_responsive_lib:
+            issues.append(_iss('html', 'warning',
+                               'No responsive CSS detected',
+                               'No @media queries or responsive framework found.',
+                               'Add @media (max-width: 768px) breakpoints, '
+                               'or use Bootstrap / Tailwind for mobile layouts',
+                               checkpoint_id='mobile_friendly'))
+
+        return issues
+
+    # ---------- Checklist #27: Inquiry Form ----------
+    def _check_inquiry_form(self, soup) -> list[dict]:
+        """
+        Verify a contact/inquiry form exists with:
+          - An action attribute
+          - Email input
+          - Submit button
+          - Reasonable label/name fields
+        We CANNOT verify it actually delivers — that requires submitting it.
+        """
+        issues: list[dict] = []
+        forms = soup.find_all('form')
+
+        if not forms:
+            issues.append(_iss('content', 'warning', 'No inquiry form on page',
+                               'Buyers cannot easily request a quote or contact you.',
+                               'Add a contact form with name, email, message, submit',
+                               checkpoint_id='inquiry_form'))
+            return issues
+
+        # Check at least one form looks like a real inquiry form
+        good_form = False
+        for f in forms:
+            inputs = f.find_all(['input', 'textarea'])
+            input_types = [i.get('type', '').lower() for i in inputs]
+            input_names = ' '.join((i.get('name') or '') + ' ' + (i.get('placeholder') or '')
+                                   for i in inputs).lower()
+
+            has_email = 'email' in input_types or 'email' in input_names
+            has_submit = bool(f.find(['button', 'input'], type='submit')) or \
+                         any('submit' in (i.get('type') or '').lower() for i in inputs)
+            has_action = bool(f.get('action'))
+
+            if has_email and (has_submit or has_action):
+                good_form = True
+                if not has_action:
+                    issues.append(_iss('html', 'info', 'Inquiry form has no action',
+                                       'Form may submit via JS — manually verify it sends emails.',
+                                       'Add action="/submit" or test the JS submit handler',
+                                       checkpoint_id='inquiry_form'))
+                break
+
+        if not good_form:
+            issues.append(_iss('content', 'warning', 'Inquiry form looks incomplete',
+                               'Found form(s) but none with email field + submit.',
+                               'Ensure form has: name, email, message, submit button',
+                               checkpoint_id='inquiry_form'))
+
+        return issues
+
+    # ============================================================
+    #  END NEW CHECKLIST-DRIVEN CHECKS
+    # ============================================================
 
     # ---------- Metals: chemical composition ----------
     def _check_chemical(self, text, grades) -> list[dict]:
@@ -644,7 +1554,8 @@ class Analyzer:
                 issues.append(_iss('chemical', 'critical',
                                    f'{raw}: Carbon % missing',
                                    'Chemical composition table lacks Carbon.',
-                                   f'Carbon (C): {ref.get("C", "")} max'))
+                                   f'Carbon (C): {ref.get("C", "")} max',
+                                   checkpoint_id='chemical_table'))
                 continue
 
             m = re.search(r'[Cc]arbon[^\d]*(\d+\.?\d*)', text)
@@ -656,7 +1567,8 @@ class Analyzer:
                         issues.append(_iss('chemical', 'critical',
                                            f'{raw}: Carbon out of spec ({val}% > {rmax}% max)',
                                            'Wrong value vs ASTM specification.',
-                                           f'Carbon: {ref["C"]} max'))
+                                           f'Carbon: {ref["C"]} max',
+                                           checkpoint_id='chemical_table'))
                 except Exception:
                     pass
 
@@ -665,12 +1577,14 @@ class Analyzer:
                     issues.append(_iss('chemical', 'warning',
                                        f'{raw}: {label} missing',
                                        f'{label} is important for this grade.',
-                                       f'{label} ({elem}): {ref[elem]}'))
+                                       f'{label} ({elem}): {ref[elem]}',
+                                       checkpoint_id='chemical_table'))
 
         if not grades:
             issues.append(_iss('chemical', 'info', 'No grade detected',
                                'Mention grade clearly.',
-                               'e.g. SS 304, SS 316L, ASTM A312 TP304'))
+                               'e.g. SS 304, SS 316L, ASTM A312 TP304',
+                               checkpoint_id='chemical_table'))
         return issues
 
     # ---------- Metals: mechanical properties ----------
@@ -680,7 +1594,8 @@ class Analyzer:
             issues.append(_iss('mechanical', 'critical',
                                'Mechanical properties table missing',
                                'Buyers need tensile/yield/elongation data.',
-                               'Add table: Tensile | Yield | Elongation | Hardness'))
+                               'Add table: Tensile | Yield | Elongation | Hardness',
+                               checkpoint_id='mechanical_table'))
             return issues
 
         for raw in set(g.upper().replace(' ', '') for g in grades):
@@ -694,7 +1609,8 @@ class Analyzer:
                     issues.append(_iss('mechanical', 'warning',
                                        f'{raw}: {label} missing',
                                        f'Mechanical table lacks {label}.',
-                                       f'{label}: {ref.get(key, "—")} (per ASTM)'))
+                                       f'{label}: {ref.get(key, "—")} (per ASTM)',
+                                       checkpoint_id='mechanical_table'))
         return issues
 
     # ---------- Metals: ASTM standards ----------
@@ -712,11 +1628,13 @@ class Analyzer:
                 issues.append(_iss('astm', 'warning',
                                    f'Missing standards: {", ".join(missing[:3])}',
                                    f'Required for {product_type} pages.',
-                                   f'Add: {" | ".join(missing)}'))
+                                   f'Add: {" | ".join(missing)}',
+                                   checkpoint_id='specifications'))
         if not any(s in text for s in ['ASTM', 'ASME', 'DIN', 'EN ', 'JIS']):
             issues.append(_iss('astm', 'critical', 'No standards mentioned',
                                'No ASTM/ASME/DIN/EN/JIS at all.',
-                               'Add: ASTM A312 / ASME SA312 / EN 10217-7'))
+                               'Add: ASTM A312 / ASME SA312 / EN 10217-7',
+                               checkpoint_id='specifications'))
         return issues
 
     # ---------- Metals: equivalent grades ----------
@@ -733,7 +1651,8 @@ class Analyzer:
                                    f'{raw}: {missing} equivalent missing',
                                    'International buyers need equivalents.',
                                    f'UNS {ref.get("UNS", "")} | EN {ref.get("EN", "")} | '
-                                   f'DIN {ref.get("DIN", "")} | JIS {ref.get("JIS", "")}'))
+                                   f'DIN {ref.get("DIN", "")} | JIS {ref.get("JIS", "")}',
+                                   checkpoint_id='equivalent_table'))
         return issues
 
     # ---------- E-commerce ----------
@@ -835,6 +1754,76 @@ class Analyzer:
 class ReportGen:
     """Generate downloadable reports in HTML, Excel, and CSV formats."""
 
+    def _build_checklist_html(self, checklist_summary: list[dict], total_pages: int) -> str:
+        """Render the 27-point checklist summary as an HTML block."""
+        if not checklist_summary or total_pages == 0:
+            return ''
+
+        groups = ['On-page SEO', 'Images', 'Content', 'Product Tables',
+                  'Page Content', 'Technical']
+
+        parts: list[str] = [
+            '<div class="cls">',
+            '<h2>27-Point Checklist Summary</h2>',
+            f'<p class="cs-hint">Site-wide compliance across all {total_pages} '
+            'crawled page(s). Each bar shows pass / fail / info / skipped / manual share.</p>',
+        ]
+
+        for group in groups:
+            group_items = [c for c in checklist_summary if c['group'] == group]
+            if not group_items:
+                continue
+            parts.append(f'<div class="cs-grp">{group}</div>')
+            for cp in group_items:
+                total = cp['total'] or 1
+                segs = []
+                for status, cls in [('pass', 'cs-pass'), ('fail', 'cs-fail'),
+                                     ('info', 'cs-info'), ('skipped', 'cs-skipped'),
+                                     ('manual', 'cs-manual')]:
+                    pct = round(cp[status] / total * 100)
+                    if pct > 0:
+                        segs.append(f'<span class="cs-seg {cls}" '
+                                    f'style="width:{pct}%" '
+                                    f'title="{cp[status]} pages: {status}"></span>')
+                bar = ''.join(segs) or '<span class="cs-seg cs-skipped" style="width:100%"></span>'
+
+                # Counts text
+                count_parts = []
+                if cp['fail']:
+                    count_parts.append(f'<span class="ng">{cp["fail"]} fail</span>')
+                if cp['pass']:
+                    count_parts.append(f'<span class="ok">{cp["pass"]} pass</span>')
+                if cp['skipped']:
+                    count_parts.append(f'{cp["skipped"]} skip')
+                if cp['manual']:
+                    count_parts.append(f'{cp["manual"]} manual')
+                counts = ' · '.join(count_parts) or '—'
+
+                parts.append(
+                    f'<div class="cs-i" title="{self._html_escape(cp["description"])}">'
+                    f'<span class="cs-n">{cp["number"]}</span>'
+                    f'<span class="cs-l">{self._html_escape(cp["label"])}</span>'
+                    f'<div class="cs-bar">{bar}</div>'
+                    f'<span class="cs-cnt">{counts}</span>'
+                    f'</div>'
+                )
+
+        parts.append(
+            '<div class="cs-leg">'
+            '<span><span class="cs-dot cs-pass"></span>Pass</span>'
+            '<span><span class="cs-dot cs-fail"></span>Fail</span>'
+            '<span><span class="cs-dot cs-info"></span>Info</span>'
+            '<span><span class="cs-dot cs-skipped"></span>Skipped</span>'
+            '<span><span class="cs-dot cs-manual"></span>Manual review</span>'
+            '</div></div>'
+        )
+        return ''.join(parts)
+
+    @staticmethod
+    def _html_escape(s: str) -> str:
+        return (str(s).replace('&', '&amp;').replace('<', '&lt;')
+                .replace('>', '&gt;').replace('"', '&quot;'))
+
     def html(self, results: list[dict], site_url: str) -> str:
         """Return a complete standalone HTML report (string)."""
         now = datetime.now().strftime('%d %b %Y %I:%M %p')
@@ -847,6 +1836,10 @@ class ReportGen:
         sev_bg = {'critical': '#fff0f0', 'warning': '#fffbe6', 'info': '#f0f7ff'}
         sev_bd = {'critical': '#e53e3e', 'warning': '#dd6b20', 'info': '#3182ce'}
         sev_bdg = {'critical': '#c53030', 'warning': '#c05621', 'info': '#2b6cb0'}
+
+        # ---- Build the 27-point checklist summary block ----
+        cl_summary = aggregate_checklist(results)
+        cl_html = self._build_checklist_html(cl_summary, tp)
 
         pages_html = ''
         for idx, r in enumerate(results):
@@ -953,6 +1946,40 @@ class ReportGen:
             '.ph{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer}'
             '.ph:hover{background:#f7fafc}'
             '@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}'
+            # Checklist summary block styles
+            '.cls{margin:6px 18px 18px;background:#fff;border-radius:9px;'
+            'box-shadow:0 1px 3px rgba(0,0,0,.06);padding:14px 16px}'
+            '.cls h2{font-size:14px;font-weight:600;margin-bottom:4px}'
+            '.cls .cs-hint{font-size:11px;color:#718096;margin-bottom:10px}'
+            '.cls .cs-grp{font-size:10px;font-weight:700;text-transform:uppercase;'
+            'letter-spacing:.4px;color:#4a5568;margin:14px 0 5px;'
+            'padding-bottom:3px;border-bottom:1px solid #e2e8f0}'
+            '.cls .cs-grp:first-of-type{margin-top:2px}'
+            '.cls .cs-i{display:grid;grid-template-columns:24px 1fr 140px 80px;'
+            'align-items:center;gap:10px;padding:5px 6px;border-radius:5px;font-size:12px}'
+            '.cls .cs-i:hover{background:#f7fafc}'
+            '.cls .cs-n{display:inline-flex;align-items:center;justify-content:center;'
+            'width:20px;height:20px;border-radius:50%;background:#e2e8f0;color:#4a5568;'
+            'font-weight:700;font-size:10px}'
+            '.cls .cs-l{font-weight:500;color:#2d3748}'
+            '.cls .cs-bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:#edf2f7}'
+            '.cls .cs-seg{display:block;height:100%}'
+            '.cls .cs-pass{background:#48bb78}'
+            '.cls .cs-fail{background:#f56565}'
+            '.cls .cs-info{background:#4299e1}'
+            '.cls .cs-skipped{background:#a0aec0}'
+            '.cls .cs-manual{background:#ed8936}'
+            '.cls .cs-cnt{font-size:10.5px;color:#718096;text-align:right}'
+            '.cls .cs-cnt .ok{color:#2f855a;font-weight:600}'
+            '.cls .cs-cnt .ng{color:#c53030;font-weight:600}'
+            '.cls .cs-leg{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;'
+            'padding-top:10px;border-top:1px solid #e2e8f0;font-size:10.5px;color:#4a5568}'
+            '.cls .cs-leg span{display:inline-flex;align-items:center;gap:5px}'
+            '.cls .cs-dot{display:inline-block;width:8px;height:8px;border-radius:50%}'
+            '@media(max-width:600px){.cls .cs-i{grid-template-columns:22px 1fr;'
+            'grid-template-areas:"n l" "bar bar" "cnt cnt";gap:6px}'
+            '.cls .cs-n{grid-area:n}.cls .cs-l{grid-area:l}'
+            '.cls .cs-bar{grid-area:bar}.cls .cs-cnt{grid-area:cnt;text-align:left}}'
             '</style></head><body>'
             f'<div class="bar"><h1>Website Audit Report</h1>'
             f'<small>{site_url} &nbsp;·&nbsp; {now} &nbsp;·&nbsp; {tp} pages</small></div>'
@@ -971,6 +1998,7 @@ class ReportGen:
             f'<button class="fb" onclick="f(\'low\',this)">Score &lt;60</button>'
             f'<button class="fb" onclick="f(\'good\',this)">Score &ge;80</button>'
             f'<input class="sr" placeholder="Search URL / title..." oninput="s(this.value)"></div>'
+            f'{cl_html}'
             f'<div class="pg" id="pg">{pages_html}</div>'
             '<script>'
             'function t(i){var b=document.getElementById("pb"+i),'
@@ -1060,11 +2088,58 @@ class ReportGen:
             we.append([g, eq.get('UNS', ''), eq.get('EN', ''),
                        eq.get('DIN', ''), eq.get('JIS', ''), eq.get('BS', '')])
 
+        # ---- 27-Point Checklist sheet ----
+        # Rows = pages, columns = each of the 27 checkpoints + the URL.
+        # Cells get a status letter (P/F/I/M/S) plus colour-coded fill so the
+        # whole sheet reads at a glance.
+        wcl = wb.create_sheet('27-Point Checklist')
+        header = ['URL', 'Title'] + [f"{cp['number']}. {cp['label']}" for cp in CHECKLIST]
+        wcl.append(header)
+        for c in wcl[1]:
+            c.fill, c.font = hf, hft
+
+        status_fills = {
+            'pass':    PatternFill('solid', fgColor='C6F6D5'),  # green
+            'fail':    PatternFill('solid', fgColor='FED7D7'),  # red
+            'info':    PatternFill('solid', fgColor='DBEAFE'),  # blue
+            'manual':  PatternFill('solid', fgColor='FEEBC8'),  # amber
+            'skipped': PatternFill('solid', fgColor='EDF2F7'),  # gray
+        }
+        status_letters = {
+            'pass': 'P', 'fail': 'F', 'info': 'I',
+            'manual': 'M', 'skipped': 'S',
+        }
+        for r in results:
+            row = [r['url'], r.get('title', '')]
+            checklist = {c['id']: c for c in r.get('checklist', [])}
+            for cp in CHECKLIST:
+                entry = checklist.get(cp['id'])
+                row.append(status_letters.get(entry['status'], '-') if entry else '-')
+            wcl.append(row)
+            # Apply colour to the 27 checklist cells in this row
+            row_idx = wcl.max_row
+            for col_offset, cp in enumerate(CHECKLIST, start=3):  # cols 3..29
+                entry = checklist.get(cp['id'])
+                if entry:
+                    cell = wcl.cell(row=row_idx, column=col_offset)
+                    cell.fill = status_fills.get(entry['status'], PatternFill())
+                    cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+                    cell.font = Font(bold=True, size=10)
+
+        # Add a legend at the bottom
+        wcl.append([])
+        wcl.append(['Legend:', 'P = Pass', 'F = Fail', 'I = Info (minor)',
+                    'M = Manual review needed', 'S = Skipped (turn on Deep Audit / target keyword)'])
+
         # Auto-size columns
         for ws2 in wb.worksheets:
             for col in ws2.columns:
                 width = min(max(len(str(c.value or '')) for c in col) + 3, 55)
                 ws2.column_dimensions[col[0].column_letter].width = width
+
+        # Narrow the 27 checklist columns for readability
+        for col_offset in range(3, 3 + len(CHECKLIST)):
+            wcl.column_dimensions[wcl.cell(row=1, column=col_offset).column_letter].width = 6
 
         # Save to bytes buffer
         buf = io.BytesIO()

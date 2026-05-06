@@ -85,6 +85,8 @@ def step1():
         except ValueError:
             max_pages = DEFAULT_MAX_PAGES
         email = (request.form.get("email") or "").strip()
+        target_keyword = (request.form.get("target_keyword") or "").strip()
+        deep_audit = request.form.get("deep_audit") == "on"
 
         # Validate URL
         if not url:
@@ -114,10 +116,18 @@ def step1():
                 max_pages_limit=MAX_PAGES_LIMIT,
                 form_url=url, form_industry=industry,
                 form_max_pages=max_pages, form_email=email,
+                form_target_keyword=target_keyword,
+                form_deep_audit=deep_audit,
             )
 
+        # Cap target keyword length for safety
+        if len(target_keyword) > 100:
+            target_keyword = target_keyword[:100]
+
         # Create the job
-        job = jobs.create_job(url, industry, max_pages, email)
+        job = jobs.create_job(url, industry, max_pages, email,
+                              target_keyword=target_keyword,
+                              deep_audit=deep_audit)
 
         # Define the post-audit hook (sends email if requested)
         def on_complete(j):
@@ -183,7 +193,17 @@ def step3_results(job_id):
         return render_template("step3_failed.html", job=job)
 
     summary = jobs.get_summary_stats(job)
-    return render_template("step3_results.html", job=job, summary=summary)
+
+    # Build the site-wide checklist aggregation (27 items × pass/fail counts)
+    from audit_engine import aggregate_checklist
+    checklist_summary = aggregate_checklist(job.results)
+
+    return render_template(
+        "step3_results.html",
+        job=job,
+        summary=summary,
+        checklist_summary=checklist_summary,
+    )
 
 
 # ---- Embedded interactive report (used by the Results page iframe) ----
