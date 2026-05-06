@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% set current_step = 2 %}
+{% block title %}Audit Wizard · Step 2 · Auditing{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 2 · Auditing your site</h1>
+  <p class="hint">
+    Auditing <strong>{{ job.url }}</strong>. You can leave this tab open and
+    watch progress, or close it and wait for the email{% if not job.email %}
+    (you didn't provide an email, so keep this tab open or copy the URL){% endif %}.
+  </p>
+
+  <div class="progress-block">
+    <div class="phase-label" id="phase-label">Starting…</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-stats">
+      <span id="progress-text">0 / {{ job.max_pages }}</span>
+      <span id="progress-pct">0%</span>
+      <span id="progress-time">0s</span>
+    </div>
+    <div class="current-url" id="current-url"></div>
+  </div>
+
+  <div class="info-box">
+    <h3 style="margin-top:0">What's happening</h3>
+    <ol id="timeline">
+      <li id="step-crawl">Crawling site (finding pages from menu and footer links)</li>
+      <li id="step-analyze">Analyzing each page (SEO, HTML, content, performance)</li>
+      <li id="step-report">Generating reports (HTML, Excel, CSV)</li>
+    </ol>
+  </div>
+
+  <div class="actions-row">
+    <button id="cancel-btn" class="btn">Cancel audit</button>
+  </div>
+</div>
+
+<div id="error-card" class="card hidden" style="border-color:#fc8181;background:#fff5f5">
+  <h2 style="color:#c53030;margin-top:0">Audit failed</h2>
+  <p id="error-msg"></p>
+  <div class="actions-row">
+    <a href="{{ url_for('step1') }}" class="btn primary">Try again</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const JOB_ID = "{{ job.id }}";
+  const STATUS_URL = "/api/job/" + JOB_ID + "/status";
+  const CANCEL_URL = "/api/job/" + JOB_ID + "/cancel";
+  const RESULTS_URL = "/job/" + JOB_ID + "/results";
+
+  const phaseLabels = {
+    queued:     "Queued — starting up…",
+    crawling:   "Crawling pages…",
+    analyzing:  "Analyzing pages…",
+    generating: "Generating report…",
+    done:       "Done!",
+  };
+
+  const $phase = document.getElementById("phase-label");
+  const $fill  = document.getElementById("progress-fill");
+  const $text  = document.getElementById("progress-text");
+  const $pct   = document.getElementById("progress-pct");
+  const $time  = document.getElementById("progress-time");
+  const $url   = document.getElementById("current-url");
+  const $err   = document.getElementById("error-card");
+  const $errMsg = document.getElementById("error-msg");
+  const $cancel = document.getElementById("cancel-btn");
+
+  function markStep(id, state) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove("active", "complete");
+    if (state) el.classList.add(state);
+  }
+
+  let pollErrors = 0;
+
+  async function poll() {
+    try {
+      const resp = await fetch(STATUS_URL);
+      if (!resp.ok) throw new Error("status " + resp.status);
+      const j = await resp.json();
+      pollErrors = 0;
+
+      $phase.textContent = phaseLabels[j.phase] || j.phase;
+      $fill.style.width = (j.percent || 0) + "%";
+      $text.textContent = (j.current || 0) + " / " + (j.total || 0);
+      $pct.textContent = (j.percent || 0) + "%";
+      $time.textContent = (j.elapsed_seconds || 0) + "s";
+      $url.textContent = j.current_url || "";
+
+      // Timeline state
+      if (j.phase === "crawling")    { markStep("step-crawl", "active"); }
+      if (j.phase === "analyzing")   { markStep("step-crawl", "complete"); markStep("step-analyze", "active"); }
+      if (j.phase === "generating")  { markStep("step-crawl", "complete"); markStep("step-analyze", "complete"); markStep("step-report", "active"); }
+      if (j.phase === "done")        { markStep("step-crawl", "complete"); markStep("step-analyze", "complete"); markStep("step-report", "complete"); }
+
+      if (j.status === "done") {
+        window.location.href = RESULTS_URL;
+        return;
+      }
+      if (j.status === "failed") {
+        $err.classList.remove("hidden");
+        $errMsg.textContent = j.error || "Unknown error";
+        return;
+      }
+      if (j.status === "cancelled") {
+        $phase.textContent = "Cancelled";
+        $cancel.disabled = true;
+        $cancel.textContent = "Cancelled";
+        return;
+      }
+
+      setTimeout(poll, 2000);
+    } catch (e) {
+      pollErrors += 1;
+      if (pollErrors > 5) {
+        $phase.textContent = "Lost connection — refresh to retry";
+        return;
+      }
+      setTimeout(poll, 3000);
+    }
+  }
+
+  $cancel.addEventListener("click", async () => {
+    if (!confirm("Cancel this audit?")) return;
+    $cancel.disabled = true;
+    $cancel.textContent = "Cancelling…";
+    try {
+      await fetch(CANCEL_URL, { method: "POST" });
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
+  poll();
+})();
+</script>
+{% endblock %}

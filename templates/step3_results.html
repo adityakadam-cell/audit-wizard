@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set current_step = 3 %}
+{% block title %}Audit Wizard · Step 3 · Results{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 3 · Audit complete</h1>
+  <p class="hint">
+    Audited <strong>{{ job.url }}</strong> in
+    {{ ((job.finished_at - job.started_at) | round(0, 'common')) | int }} seconds.
+  </p>
+
+  {# ---- Score cards ---- #}
+  <div class="score-cards">
+    <div class="score-card">
+      <div class="score-num">{{ summary.page_count }}</div>
+      <div class="score-label">Pages scanned</div>
+    </div>
+    <div class="score-card score-card-avg">
+      <div class="score-num">{{ summary.avg_score }}</div>
+      <div class="score-label">Avg Score</div>
+    </div>
+    <div class="score-card score-card-critical">
+      <div class="score-num">{{ summary.critical_total }}</div>
+      <div class="score-label">Critical</div>
+    </div>
+    <div class="score-card score-card-warning">
+      <div class="score-num">{{ summary.warning_total }}</div>
+      <div class="score-label">Warnings</div>
+    </div>
+    <div class="score-card">
+      <div class="score-num">{{ summary.info_total }}</div>
+      <div class="score-label">Info</div>
+    </div>
+  </div>
+
+  {# ---- Download buttons ---- #}
+  <div class="toolbar">
+    <a href="{{ url_for('download', job_id=job.id, fmt='html') }}" class="btn primary">
+      ⬇ Download HTML report
+    </a>
+    <a href="{{ url_for('download', job_id=job.id, fmt='xlsx') }}" class="btn">
+      ⬇ Excel (XLSX)
+    </a>
+    <a href="{{ url_for('download', job_id=job.id, fmt='csv') }}" class="btn">
+      ⬇ CSV summary
+    </a>
+    <a href="{{ url_for('step1') }}" class="btn">+ New audit</a>
+  </div>
+
+  {% if job.email %}
+    <p class="hint" style="margin-top:14px">
+      ✓ A link to this report has been sent to <strong>{{ job.email }}</strong>
+      (if not received, check spam — the from address is
+      <code>onboarding@resend.dev</code> by default).
+    </p>
+  {% endif %}
+
+  <p class="hint" style="margin-top:6px">
+    The report stays online for 1 hour. Download to keep it longer.
+  </p>
+</div>
+
+{# ---- Embedded interactive report ---- #}
+<div class="card report-frame-card">
+  <h2 style="margin-top:0">Interactive Report</h2>
+  <p class="hint">
+    Click any page row below to expand. Use the filters to focus on critical
+    pages or low scores.
+  </p>
+  <iframe
+    src="{{ url_for('report_html', job_id=job.id) }}"
+    class="report-iframe"
+    title="Audit results"
+  ></iframe>
+</div>
+{% endblock %}
