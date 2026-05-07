@@ -527,8 +527,151 @@ class Crawler:
                 out.add(clean)
         return out
 
+    # --------------------------------------------------------------
+    #  Sitemap.xml discovery
+    # --------------------------------------------------------------
+    # Industrial product sites almost always publish a sitemap.xml — they
+    # need it for Google indexing of deep product pages that aren't linked
+    # from the main menu. Reading sitemap.xml gives us:
+    #   1. Far better page coverage than menu/footer link-following alone
+    #     (orphan product pages, paginated listings, deep category pages).
+    #   2. An accurate page count BEFORE we start fetching, so the
+    #     progress bar in step2.html shows real totals.
+    #   3. A faster crawl: one HTTP call gets us 50-500 URLs vs walking
+    #     a tree of links.
+    #
+    # We try the standard locations + check robots.txt for a custom
+    # location. If we find URLs, we use them as the URL queue. If not,
+    # we fall back to the existing menu/footer link-following behaviour.
+
+    def discover_sitemap_urls(self, base_url: str) -> list[str]:
+        """
+        Discover URLs from sitemap.xml. Returns a list of same-domain URLs,
+        or [] if no sitemap is found / parseable.
+
+        Tries (in order):
+          - /sitemap.xml
+          - /sitemap_index.xml
+          - /sitemap-index.xml
+          - whatever is listed in /robots.txt
+        Handles sitemap-index files (which contain links to other sitemaps)
+        by recursing one level. Caps the total at self.max_pages * 3 to keep
+        memory bounded even on huge sites.
+        """
+        candidates = [
+            urljoin(base_url, '/sitemap.xml'),
+            urljoin(base_url, '/sitemap_index.xml'),
+            urljoin(base_url, '/sitemap-index.xml'),
+        ]
+
+        # Also check robots.txt for a Sitemap: directive
+        try:
+            r = self.session.get(urljoin(base_url, '/robots.txt'),
+                                 timeout=10, verify=False)
+            if r.status_code == 200:
+                for line in r.text.splitlines():
+                    if line.lower().startswith('sitemap:'):
+                        sm_url = line.split(':', 1)[1].strip()
+                        if sm_url and sm_url not in candidates:
+                            candidates.append(sm_url)
+        except Exception:
+            pass
+
+        # Hard cap so we don't load 100k URLs into memory on huge ecommerce sites
+        url_cap = max(self.max_pages * 3, 200)
+        all_urls: list[str] = []
+        seen: set[str] = set()
+        base_domain = urlparse(base_url).netloc
+
+        for sm_url in candidates:
+            if len(all_urls) >= url_cap:
+                break
+            try:
+                urls = self._parse_sitemap(sm_url, recurse=True, cap=url_cap - len(all_urls))
+                for u in urls:
+                    if urlparse(u).netloc == base_domain and u not in seen:
+                        seen.add(u)
+                        all_urls.append(u)
+                if all_urls:
+                    # Found at least one working sitemap — don't waste time on others
+                    break
+            except Exception:
+                continue
+
+        return all_urls
+
+    def _parse_sitemap(self, sitemap_url: str, recurse: bool = True,
+                       cap: int = 1000) -> list[str]:
+        """
+        Fetch a sitemap.xml and return URLs from <url><loc> entries.
+        If it's a sitemap-index file (<sitemapindex>), and recurse=True,
+        fetches each child sitemap up to the cap.
+        """
+        from xml.etree import ElementTree as ET
+
+        try:
+            r = self.session.get(sitemap_url, timeout=15, verify=False)
+            if r.status_code != 200 or not r.text.strip():
+                return []
+        except Exception:
+            return []
+
+        # Strip BOM if present (some servers serve sitemap.xml with one)
+        text = r.text.lstrip('\ufeff').strip()
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return []
+
+        # Sitemap namespace — strip it for simpler queries
+        ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+
+        urls: list[str] = []
+
+        # Case 1: sitemap-index. Recurse into each child sitemap.
+        if root.tag.endswith('sitemapindex'):
+            if not recurse:
+                return []
+            for child in root.findall('sm:sitemap/sm:loc', ns):
+                if child.text and len(urls) < cap:
+                    urls.extend(
+                        self._parse_sitemap(child.text.strip(),
+                                             recurse=False, cap=cap - len(urls))
+                    )
+            return urls[:cap]
+
+        # Case 2: regular sitemap with <url> elements
+        for loc in root.findall('sm:url/sm:loc', ns):
+            if loc.text and len(urls) < cap:
+                urls.append(loc.text.strip())
+
+        return urls
+
     def crawl(self) -> list[dict]:
         """Run the crawl. Returns the list of fetched pages."""
+        # Try sitemap.xml first — gives much better coverage than link-following
+        if self.base_url:
+            sitemap_urls = self.discover_sitemap_urls(self.base_url)
+            if sitemap_urls:
+                # Replace whatever's currently in the queue with sitemap URLs.
+                # Keep the start URL first so it's always page #1.
+                ordered: list[str] = []
+                if self.base_url in sitemap_urls:
+                    ordered.append(self.base_url)
+                for u in sitemap_urls:
+                    if u != self.base_url and u not in ordered:
+                        ordered.append(u)
+
+                # Reset queue + visited to use sitemap URLs as the seed
+                while not self.q.empty():
+                    try:
+                        self.q.get_nowait()
+                    except Exception:
+                        break
+                self.visited = set(ordered)
+                for u in ordered[:self.max_pages]:
+                    self.q.put(u)
+
         empty_rounds = 0
         while len(self.pages) < self.max_pages and empty_rounds < 4:
             if self.should_stop():
