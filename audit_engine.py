@@ -226,8 +226,8 @@ CHECKLIST = [
      "description": "Links to related products or category pages.",
      "group": "Content",         "auto": "full"},
     {"id": "keyword_usage",     "number": 13, "label": "Keyword Usage",
-     "description": "Target keyword present and not overused (1-3% density).",
-     "group": "Content",         "auto": "partial"},
+     "description": "Target keyword present, naturally distributed (1-3% density), and not over-stuffed.",
+     "group": "Content",         "auto": "manual"},
     {"id": "content_unique",    "number": 14, "label": "Content Originality",
      "description": "Not copied from other sites or catalogs.",
      "group": "Content",         "auto": "manual"},
@@ -373,10 +373,6 @@ def build_checklist_view(issues: list[dict], deep_audit: bool = False,
             status = 'skipped'
             severity = 'info'
             notes = 'Skipped (deep audit not enabled). Run with "Deep audit" to check.'
-        elif cid == 'keyword_usage' and not target_keyword:
-            status = 'skipped'
-            severity = 'info'
-            notes = 'No target keyword provided — fill the "Target keyword" field on Step 1.'
         elif not related:
             status = 'pass'
             severity = 'info'

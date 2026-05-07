@@ -85,7 +85,6 @@ def step1():
         except ValueError:
             max_pages = DEFAULT_MAX_PAGES
         email = (request.form.get("email") or "").strip()
-        target_keyword = (request.form.get("target_keyword") or "").strip()
         deep_audit = request.form.get("deep_audit") == "on"
 
         # Validate URL
@@ -116,17 +115,14 @@ def step1():
                 max_pages_limit=MAX_PAGES_LIMIT,
                 form_url=url, form_industry=industry,
                 form_max_pages=max_pages, form_email=email,
-                form_target_keyword=target_keyword,
                 form_deep_audit=deep_audit,
             )
 
-        # Cap target keyword length for safety
-        if len(target_keyword) > 100:
-            target_keyword = target_keyword[:100]
-
-        # Create the job
+        # Create the job. We still pass target_keyword="" to keep the
+        # Job/Analyzer signature stable — checkpoint #13 (Keyword Usage)
+        # is now a manual-review item per the CHECKLIST registry.
         job = jobs.create_job(url, industry, max_pages, email,
-                              target_keyword=target_keyword,
+                              target_keyword="",
                               deep_audit=deep_audit)
 
         # Define the post-audit hook (sends email if requested)
