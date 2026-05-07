@@ -1891,6 +1891,13 @@ class ReportGen:
                     f'margin:0">{i["description"]}</p>{fix_html}</div>'
                 )
 
+            # Pre-compute the "no issues" fallback HTML outside the f-string.
+            # Python 3.11 doesn't allow backslashes inside f-string {...} blocks
+            # (PEP 701 lifted that in 3.12, but Render runs 3.11). Define it
+            # once here, reference it cleanly below.
+            no_issues_html = '<p style="color:#a0aec0;font-size:13px">No issues found.</p>'
+            issues_block = iss_html or no_issues_html
+
             pages_html += (
                 f'<div class="pc" id="pc{idx}" data-score="{sc}" data-crit="{crit_c}">'
                 f'<div class="ph" onclick="t({idx})">'
@@ -1915,7 +1922,7 @@ class ReportGen:
                 f'<div style="font-size:18px;color:#a0aec0" id="ti{idx}">▾</div></div>'
                 f'<div id="pb{idx}" style="display:none;border-top:1px solid #f0f0f0;'
                 f'padding:12px 14px"><div style="margin-bottom:10px">{bars}</div>'
-                f'{iss_html or "<p style='\color:#a0aec0;font-size:13px\'>No issues found.</p>"}</div>'
+                f'{issues_block}</div>'
                 f'</div>'
             )
 
