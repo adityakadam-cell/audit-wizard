@@ -677,10 +677,18 @@ def test_build_checklist_view_pass_when_no_issues():
             assert entry['status'] == 'manual'
         elif cp['auto'] == 'deep':
             assert entry['status'] == 'skipped'
-        elif cp['id'] == 'keyword_usage':
-            assert entry['status'] == 'skipped'  # no target keyword
         else:
             assert entry['status'] == 'pass'
+
+
+def test_keyword_usage_is_manual_checkpoint():
+    """After removing the Target keyword form field, checkpoint #13 cannot
+    be auto-checked anymore — it must be classified 'manual' so the report
+    correctly tells users to review it themselves."""
+    cp = CHECKLIST_BY_ID['keyword_usage']
+    assert cp['auto'] == 'manual'
+    # And it should appear in the manual-only set
+    assert 'keyword_usage' in MANUAL_ONLY_CHECKPOINTS
 
 
 def test_build_checklist_view_fail_on_critical_issue():
