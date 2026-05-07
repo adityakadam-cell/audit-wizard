@@ -1915,7 +1915,7 @@ class ReportGen:
                 f'<div style="font-size:18px;color:#a0aec0" id="ti{idx}">▾</div></div>'
                 f'<div id="pb{idx}" style="display:none;border-top:1px solid #f0f0f0;'
                 f'padding:12px 14px"><div style="margin-bottom:10px">{bars}</div>'
-                f'{iss_html or "<p style=\'color:#a0aec0;font-size:13px\'>No issues found.</p>"}</div>'
+                f'{iss_html or "<p style='\color:#a0aec0;font-size:13px\'>No issues found.</p>"}</div>'
                 f'</div>'
             )
 
