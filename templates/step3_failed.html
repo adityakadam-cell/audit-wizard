@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% set current_step = 3 %}
+{% block title %}Audit Wizard · Failed{% endblock %}
+
+{% block content %}
+<div class="card" style="border-color:#fc8181;background:#fff5f5">
+  <h1 style="color:#c53030">Audit failed</h1>
+  <p>The audit for <strong>{{ job.url }}</strong> could not complete.</p>
+
+  <p><strong>Error:</strong></p>
+  <pre style="background:#fff;padding:12px;border-radius:6px;border:1px solid #fed7d7;
+              font-size:13px;overflow-x:auto;white-space:pre-wrap">{{ job.error }}</pre>
+
+  <h3 style="margin-top:20px">Common causes</h3>
+  <ul style="line-height:1.7">
+    <li>The URL doesn't exist or the site is down.</li>
+    <li>The site blocks automated crawlers (look for a 403 in the error).</li>
+    <li>SSL certificate problems on the target site.</li>
+    <li>The site is so slow that all requests timed out.</li>
+  </ul>
+
+  <div class="actions-row">
+    <a href="{{ url_for('step1') }}" class="btn primary">Try again</a>
+  </div>
+</div>
+{% endblock %}

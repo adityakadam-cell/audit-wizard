@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Website Audit Wizard{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🔍 Website Audit Wizard</div>
+    <div class="topbar-right">
+      {% block topbar_right %}
+        <a href="{{ url_for('step1') }}" class="link-soft">Start over</a>
+      {% endblock %}
+    </div>
+  </header>
+
+  <nav class="stepper" aria-label="Wizard progress">
+    {% set step = current_step|default(1) %}
+    <div class="step {% if step >= 1 %}done{% endif %} {% if step == 1 %}active{% endif %}">
+      <span class="step-num">1</span> URL
+    </div>
+    <div class="step-line {% if step > 1 %}done{% endif %}"></div>
+    <div class="step {% if step >= 2 %}done{% endif %} {% if step == 2 %}active{% endif %}">
+      <span class="step-num">2</span> Audit
+    </div>
+    <div class="step-line {% if step > 2 %}done{% endif %}"></div>
+    <div class="step {% if step >= 3 %}done{% endif %} {% if step == 3 %}active{% endif %}">
+      <span class="step-num">3</span> Review
+    </div>
+  </nav>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for category, msg in messages %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <small>Audit Wizard · powered by your team</small>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
