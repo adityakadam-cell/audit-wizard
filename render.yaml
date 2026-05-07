@@ -1,0 +1,40 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deployment:
+#   1. Push this repo to GitHub.
+#   2. https://dashboard.render.com/blueprints → New Blueprint → connect repo.
+#   3. Render reads this file automatically.
+#   4. Set the environment variables marked sync:false in the Render dashboard
+#      after the blueprint is applied.
+#   5. Click Deploy. URL like https://audit-wizard.onrender.com.
+
+services:
+  - type: web
+    name: audit-wizard
+    runtime: python
+    region: oregon
+    plan: free            # upgrade to "starter" ($7/mo) for higher page limits
+    buildCommand: pip install -r requirements.txt
+    # python -m gunicorn (not bare "gunicorn") so PATH issues don't break the boot.
+    # --workers 1 is intentional — see wsgi.py.
+    # --timeout 200 because audits can be slow.
+    startCommand: python -m gunicorn wsgi:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT --timeout 200
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      # Optional — set in dashboard if you want emails to actually send.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: "Audit Wizard <onboarding@resend.dev>"
+      # IMPORTANT: set this to your live URL after first deploy
+      # so email links point to the right place.
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: MAX_PAGES_LIMIT
+        value: "100"
+      - key: DEFAULT_MAX_PAGES
+        value: "30"
