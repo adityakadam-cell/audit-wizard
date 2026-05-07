@@ -394,16 +394,34 @@ def test_step1_post_creates_job_and_redirects(client):
     assert "/step2/" in r.location
 
 
-def test_step1_post_rejects_invalid_email(client):
+def test_step1_post_with_simplified_form_creates_job(client):
+    """After removing max_pages and email fields, a POST with just URL +
+    industry + deep_audit should still create a job and redirect to /step2."""
+    # Patch out run_audit_in_background so we don't actually launch a
+    # background thread that hits the network during the test.
+    import jobs as jobs_module
+    with patch.object(jobs_module, 'run_audit_in_background'):
+        r = client.post(
+            "/step1",
+            data={"url": "https://example.com", "industry": "metals"},
+            follow_redirects=False,
+        )
+    # Should redirect to /step2/<job_id>
+    assert r.status_code == 302
+    assert "/step2/" in r.headers["Location"]
+
+
+def test_step1_post_rejects_empty_url(client):
+    """Empty URL is still rejected (the only validation that survives)."""
     r = client.post(
         "/step1",
-        data={"url": "https://example.com", "industry": "auto",
-              "max_pages": "5", "email": "not-an-email"},
+        data={"url": "", "industry": "auto"},
         follow_redirects=False,
     )
     # Re-renders the form, doesn't redirect
     assert r.status_code == 200
-    assert b"invalid" in r.data.lower()
+    # Flash message about needing a URL
+    assert b"website url" in r.data.lower() or b"please" in r.data.lower()
 
 
 def test_unknown_job_status_returns_404(client):
@@ -771,3 +789,126 @@ def test_html_report_contains_checklist_block():
     html = rg.html([result], 'https://example.com/')
     assert '27-Point Checklist Summary' in html
     assert 'class="cls"' in html
+
+
+# ============================================================
+# Tests for sitemap.xml discovery (auto-collect-all-pages feature)
+# ============================================================
+
+from unittest.mock import patch, MagicMock
+
+
+def test_parse_sitemap_extracts_loc_urls():
+    """Given a real sitemap.xml, _parse_sitemap returns the list of URLs."""
+    crawler = Crawler("https://example.com", max_pages=10)
+    fake_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/</loc></url>
+  <url><loc>https://example.com/products/ss-304-pipe</loc></url>
+  <url><loc>https://example.com/products/ss-316-pipe</loc></url>
+  <url><loc>https://example.com/about</loc></url>
+</urlset>'''
+    fake_response = MagicMock(status_code=200, text=fake_xml)
+    with patch.object(crawler.session, 'get', return_value=fake_response):
+        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
+    assert len(urls) == 4
+    assert "https://example.com/products/ss-304-pipe" in urls
+    assert "https://example.com/about" in urls
+
+
+def test_parse_sitemap_handles_index_with_recursion():
+    """A sitemap-index file points to other sitemaps; we recurse one level."""
+    crawler = Crawler("https://example.com", max_pages=100)
+    index_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>https://example.com/sitemap-products.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap-pages.xml</loc></sitemap>
+</sitemapindex>'''
+    products_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/products/a</loc></url>
+  <url><loc>https://example.com/products/b</loc></url>
+</urlset>'''
+    pages_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/about</loc></url>
+</urlset>'''
+
+    def fake_get(url, *args, **kwargs):
+        m = MagicMock(status_code=200)
+        if 'sitemap-products' in url:
+            m.text = products_xml
+        elif 'sitemap-pages' in url:
+            m.text = pages_xml
+        else:
+            m.text = index_xml
+        return m
+
+    with patch.object(crawler.session, 'get', side_effect=fake_get):
+        urls = crawler._parse_sitemap("https://example.com/sitemap.xml", recurse=True)
+
+    assert len(urls) == 3
+    assert "https://example.com/about" in urls
+    assert "https://example.com/products/a" in urls
+
+
+def test_parse_sitemap_handles_bom():
+    """Some servers serve sitemap.xml with a UTF-8 BOM. Don't crash on it."""
+    crawler = Crawler("https://example.com", max_pages=10)
+    fake_xml_with_bom = '\ufeff<?xml version="1.0" encoding="UTF-8"?>\n' \
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' \
+        '<url><loc>https://example.com/x</loc></url></urlset>'
+    fake_response = MagicMock(status_code=200, text=fake_xml_with_bom)
+    with patch.object(crawler.session, 'get', return_value=fake_response):
+        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
+    assert urls == ["https://example.com/x"]
+
+
+def test_parse_sitemap_returns_empty_on_404():
+    """If sitemap.xml doesn't exist, return [] gracefully (no crash)."""
+    crawler = Crawler("https://example.com", max_pages=10)
+    fake_response = MagicMock(status_code=404, text="Not Found")
+    with patch.object(crawler.session, 'get', return_value=fake_response):
+        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
+    assert urls == []
+
+
+def test_parse_sitemap_returns_empty_on_invalid_xml():
+    """Garbage XML should not crash the audit."""
+    crawler = Crawler("https://example.com", max_pages=10)
+    fake_response = MagicMock(status_code=200, text="<not really xml>")
+    with patch.object(crawler.session, 'get', return_value=fake_response):
+        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
+    assert urls == []
+
+
+def test_discover_sitemap_filters_to_same_domain():
+    """If sitemap lists external URLs (rare but possible), filter them out."""
+    crawler = Crawler("https://example.com", max_pages=10)
+    fake_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/a</loc></url>
+  <url><loc>https://other-site.com/b</loc></url>
+  <url><loc>https://example.com/c</loc></url>
+</urlset>'''
+
+    def fake_get(url, *args, **kwargs):
+        m = MagicMock()
+        if 'robots.txt' in url:
+            m.status_code = 404
+            m.text = ""
+        elif 'sitemap.xml' in url:
+            m.status_code = 200
+            m.text = fake_xml
+        else:
+            m.status_code = 404
+            m.text = ""
+        return m
+
+    with patch.object(crawler.session, 'get', side_effect=fake_get):
+        urls = crawler.discover_sitemap_urls("https://example.com")
+
+    # Only same-domain URLs should be returned
+    assert "https://example.com/a" in urls
+    assert "https://example.com/c" in urls
+    assert all('other-site.com' not in u for u in urls)
