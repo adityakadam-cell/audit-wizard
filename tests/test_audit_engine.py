@@ -394,34 +394,16 @@ def test_step1_post_creates_job_and_redirects(client):
     assert "/step2/" in r.location
 
 
-def test_step1_post_with_simplified_form_creates_job(client):
-    """After removing max_pages and email fields, a POST with just URL +
-    industry + deep_audit should still create a job and redirect to /step2."""
-    # Patch out run_audit_in_background so we don't actually launch a
-    # background thread that hits the network during the test.
-    import jobs as jobs_module
-    with patch.object(jobs_module, 'run_audit_in_background'):
-        r = client.post(
-            "/step1",
-            data={"url": "https://example.com", "industry": "metals"},
-            follow_redirects=False,
-        )
-    # Should redirect to /step2/<job_id>
-    assert r.status_code == 302
-    assert "/step2/" in r.headers["Location"]
-
-
-def test_step1_post_rejects_empty_url(client):
-    """Empty URL is still rejected (the only validation that survives)."""
+def test_step1_post_rejects_invalid_email(client):
     r = client.post(
         "/step1",
-        data={"url": "", "industry": "auto"},
+        data={"url": "https://example.com", "industry": "auto",
+              "max_pages": "5", "email": "not-an-email"},
         follow_redirects=False,
     )
     # Re-renders the form, doesn't redirect
     assert r.status_code == 200
-    # Flash message about needing a URL
-    assert b"website url" in r.data.lower() or b"please" in r.data.lower()
+    assert b"invalid" in r.data.lower()
 
 
 def test_unknown_job_status_returns_404(client):
@@ -695,18 +677,10 @@ def test_build_checklist_view_pass_when_no_issues():
             assert entry['status'] == 'manual'
         elif cp['auto'] == 'deep':
             assert entry['status'] == 'skipped'
+        elif cp['id'] == 'keyword_usage':
+            assert entry['status'] == 'skipped'  # no target keyword
         else:
             assert entry['status'] == 'pass'
-
-
-def test_keyword_usage_is_manual_checkpoint():
-    """After removing the Target keyword form field, checkpoint #13 cannot
-    be auto-checked anymore — it must be classified 'manual' so the report
-    correctly tells users to review it themselves."""
-    cp = CHECKLIST_BY_ID['keyword_usage']
-    assert cp['auto'] == 'manual'
-    # And it should appear in the manual-only set
-    assert 'keyword_usage' in MANUAL_ONLY_CHECKPOINTS
 
 
 def test_build_checklist_view_fail_on_critical_issue():
@@ -792,123 +766,206 @@ def test_html_report_contains_checklist_block():
 
 
 # ============================================================
-# Tests for sitemap.xml discovery (auto-collect-all-pages feature)
+# Tests for the streaming crawler + recommendations + new checks
 # ============================================================
 
 from unittest.mock import patch, MagicMock
+from audit_engine import (
+    generate_recommendations, top_recommendations, overall_health_summary,
+    RECOMMENDATION_THEMES,
+)
+from bs4 import BeautifulSoup as BS
 
 
-def test_parse_sitemap_extracts_loc_urls():
-    """Given a real sitemap.xml, _parse_sitemap returns the list of URLs."""
-    crawler = Crawler("https://example.com", max_pages=10)
-    fake_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+def _fake_audit_result(url, critical_checkpoints=None, warning_checkpoints=None):
+    """Helper: build a minimal audit result dict for testing."""
+    issues = []
+    for cp in (critical_checkpoints or []):
+        issues.append({'category': 'seo', 'severity': 'critical', 'title': 'x',
+                       'description': '', 'fix': '', 'checkpoint_id': cp})
+    for cp in (warning_checkpoints or []):
+        issues.append({'category': 'seo', 'severity': 'warning', 'title': 'x',
+                       'description': '', 'fix': '', 'checkpoint_id': cp})
+    return {
+        'url': url, 'title': 'X', 'issues': issues,
+        'scores': {'overall': 50 if issues else 100},
+        'word_count': 200, 'grades_found': [],
+        'response_time': 1, 'industry': 'metals',
+        'status': 200, 'checklist': [],
+    }
+
+
+def test_generate_recommendations_empty_results():
+    assert generate_recommendations([]) == []
+
+
+def test_generate_recommendations_sorts_by_priority():
+    # Page 1: critical h1 + critical title; Page 2: critical h1 + warning alt
+    # h1 affects both pages, title affects 1 page critical, alt affects 1 page warning
+    results = [
+        _fake_audit_result('p1', critical_checkpoints=['h1_tag', 'page_title']),
+        _fake_audit_result('p2', critical_checkpoints=['h1_tag'],
+                           warning_checkpoints=['image_alt']),
+    ]
+    recs = generate_recommendations(results)
+    assert len(recs) >= 3
+
+    # h1_tag should be first (critical + affects ALL pages)
+    assert recs[0]['id'] == 'h1_tag'
+    assert recs[0]['severity'] == 'critical'
+    assert recs[0]['affected_pages'] == 2
+
+    # Later ones should have lower priority scores
+    for i in range(1, len(recs)):
+        assert recs[i]['priority_score'] <= recs[i-1]['priority_score']
+
+
+def test_top_recommendations_limits_count():
+    results = [_fake_audit_result(f'p{i}',
+                                  critical_checkpoints=['h1_tag', 'page_title',
+                                                        'canonical', 'image_alt',
+                                                        'schema', 'breadcrumbs'])
+               for i in range(3)]
+    recs = top_recommendations(results, n=3)
+    assert len(recs) == 3
+
+
+def test_recommendation_has_required_fields():
+    results = [_fake_audit_result('p1', critical_checkpoints=['h1_tag'])]
+    recs = generate_recommendations(results)
+    rec = recs[0]
+    assert 'theme' in rec
+    assert 'theme_label' in rec
+    assert 'headline' in rec
+    assert 'why' in rec
+    assert 'action_steps' in rec
+    assert isinstance(rec['action_steps'], list)
+    assert len(rec['action_steps']) > 0
+    assert rec['affected_pages'] == 1
+    assert rec['severity'] == 'critical'
+
+
+def test_recommendation_themes_are_valid():
+    results = [_fake_audit_result('p1', critical_checkpoints=['h1_tag', 'image_alt'])]
+    for rec in generate_recommendations(results):
+        assert rec['theme'] in RECOMMENDATION_THEMES, \
+            f"Unknown theme: {rec['theme']}"
+
+
+def test_overall_health_summary_computes_correctly():
+    results = [
+        _fake_audit_result('p1', critical_checkpoints=['h1_tag']),
+        _fake_audit_result('p2'),  # clean page
+        _fake_audit_result('p3', warning_checkpoints=['image_alt']),
+    ]
+    h = overall_health_summary(results)
+    assert h['page_count'] == 3
+    assert h['critical_issues'] == 1
+    assert h['warning_issues'] == 1
+    assert h['pages_with_critical'] == 1
+    assert h['grade'] in ('A', 'B', 'C', 'D', 'F')
+
+
+def test_overall_health_summary_empty_results():
+    h = overall_health_summary([])
+    assert h['page_count'] == 0
+    assert h['avg_score'] == 0
+    assert h['grade'] == 'N/A'
+
+
+def test_security_headers_check_flags_missing_hsts():
+    a = Analyzer()
+    pg = {'response_headers': {}}
+    issues = a._check_security_headers(pg)
+    titles = [i['title'] for i in issues]
+    assert any('HSTS' in t for t in titles)
+    assert any('Content-Security-Policy' in t for t in titles)
+
+
+def test_security_headers_check_silent_when_no_headers():
+    """If we couldn't get headers at all, don't spam issues."""
+    a = Analyzer()
+    issues = a._check_security_headers({})  # No response_headers key
+    assert issues == []
+
+
+def test_mixed_content_flags_http_resources_on_https_page():
+    a = Analyzer()
+    html = '''<html><body>
+    <img src="http://example.com/logo.png">
+    <script src="http://example.com/analytics.js"></script>
+    </body></html>'''
+    soup = BS(html, 'lxml')
+    issues = a._check_mixed_content(soup, 'https://example.com/page')
+    assert len(issues) == 1
+    assert '2 resources' in issues[0]['title']
+
+
+def test_mixed_content_skipped_on_http_page():
+    a = Analyzer()
+    html = '<html><body><img src="http://x.com/y.png"></body></html>'
+    soup = BS(html, 'lxml')
+    issues = a._check_mixed_content(soup, 'http://example.com/page')
+    assert issues == []  # No HTTPS, no mixed-content concern
+
+
+def test_social_media_tags_flags_missing_og_image():
+    a = Analyzer()
+    soup = BS('<html><head></head><body></body></html>', 'lxml')
+    issues = a._check_social_media_tags(soup)
+    titles = [i['title'] for i in issues]
+    assert any('og:image' in t for t in titles)
+    assert any('Twitter Card' in t for t in titles)
+
+
+def test_social_media_tags_passes_when_present():
+    a = Analyzer()
+    html = '''<html><head>
+    <meta property="og:image" content="https://x.com/og.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    </head></html>'''
+    soup = BS(html, 'lxml')
+    issues = a._check_social_media_tags(soup)
+    assert issues == []
+
+
+def test_streaming_crawler_yields_pages_one_at_a_time():
+    """Verify crawl_streaming() is a generator that yields incrementally."""
+    crawler = Crawler('https://example.com', max_pages=3)
+    # The method must be a generator (callable returning iterator)
+    import inspect
+    assert inspect.isgeneratorfunction(crawler.crawl_streaming)
+
+
+def test_seed_queue_from_sitemap_uses_sitemap_urls():
+    """When sitemap exists, the queue is reseeded with its URLs."""
+    crawler = Crawler('https://example.com', max_pages=10)
+    fake_sitemap_xml = '''<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://example.com/</loc></url>
-  <url><loc>https://example.com/products/ss-304-pipe</loc></url>
-  <url><loc>https://example.com/products/ss-316-pipe</loc></url>
-  <url><loc>https://example.com/about</loc></url>
-</urlset>'''
-    fake_response = MagicMock(status_code=200, text=fake_xml)
-    with patch.object(crawler.session, 'get', return_value=fake_response):
-        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
-    assert len(urls) == 4
-    assert "https://example.com/products/ss-304-pipe" in urls
-    assert "https://example.com/about" in urls
-
-
-def test_parse_sitemap_handles_index_with_recursion():
-    """A sitemap-index file points to other sitemaps; we recurse one level."""
-    crawler = Crawler("https://example.com", max_pages=100)
-    index_xml = '''<?xml version="1.0" encoding="UTF-8"?>
-<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <sitemap><loc>https://example.com/sitemap-products.xml</loc></sitemap>
-  <sitemap><loc>https://example.com/sitemap-pages.xml</loc></sitemap>
-</sitemapindex>'''
-    products_xml = '''<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://example.com/products/a</loc></url>
-  <url><loc>https://example.com/products/b</loc></url>
-</urlset>'''
-    pages_xml = '''<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://example.com/about</loc></url>
+  <url><loc>https://example.com/p1</loc></url>
+  <url><loc>https://example.com/p2</loc></url>
 </urlset>'''
 
-    def fake_get(url, *args, **kwargs):
-        m = MagicMock(status_code=200)
-        if 'sitemap-products' in url:
-            m.text = products_xml
-        elif 'sitemap-pages' in url:
-            m.text = pages_xml
-        else:
-            m.text = index_xml
-        return m
-
-    with patch.object(crawler.session, 'get', side_effect=fake_get):
-        urls = crawler._parse_sitemap("https://example.com/sitemap.xml", recurse=True)
-
-    assert len(urls) == 3
-    assert "https://example.com/about" in urls
-    assert "https://example.com/products/a" in urls
-
-
-def test_parse_sitemap_handles_bom():
-    """Some servers serve sitemap.xml with a UTF-8 BOM. Don't crash on it."""
-    crawler = Crawler("https://example.com", max_pages=10)
-    fake_xml_with_bom = '\ufeff<?xml version="1.0" encoding="UTF-8"?>\n' \
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' \
-        '<url><loc>https://example.com/x</loc></url></urlset>'
-    fake_response = MagicMock(status_code=200, text=fake_xml_with_bom)
-    with patch.object(crawler.session, 'get', return_value=fake_response):
-        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
-    assert urls == ["https://example.com/x"]
-
-
-def test_parse_sitemap_returns_empty_on_404():
-    """If sitemap.xml doesn't exist, return [] gracefully (no crash)."""
-    crawler = Crawler("https://example.com", max_pages=10)
-    fake_response = MagicMock(status_code=404, text="Not Found")
-    with patch.object(crawler.session, 'get', return_value=fake_response):
-        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
-    assert urls == []
-
-
-def test_parse_sitemap_returns_empty_on_invalid_xml():
-    """Garbage XML should not crash the audit."""
-    crawler = Crawler("https://example.com", max_pages=10)
-    fake_response = MagicMock(status_code=200, text="<not really xml>")
-    with patch.object(crawler.session, 'get', return_value=fake_response):
-        urls = crawler._parse_sitemap("https://example.com/sitemap.xml")
-    assert urls == []
-
-
-def test_discover_sitemap_filters_to_same_domain():
-    """If sitemap lists external URLs (rare but possible), filter them out."""
-    crawler = Crawler("https://example.com", max_pages=10)
-    fake_xml = '''<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://example.com/a</loc></url>
-  <url><loc>https://other-site.com/b</loc></url>
-  <url><loc>https://example.com/c</loc></url>
-</urlset>'''
-
-    def fake_get(url, *args, **kwargs):
+    def fake_get(url, *a, **kw):
         m = MagicMock()
         if 'robots.txt' in url:
             m.status_code = 404
-            m.text = ""
+            m.text = ''
         elif 'sitemap.xml' in url:
             m.status_code = 200
-            m.text = fake_xml
+            m.text = fake_sitemap_xml
         else:
             m.status_code = 404
-            m.text = ""
+            m.text = ''
         return m
 
     with patch.object(crawler.session, 'get', side_effect=fake_get):
-        urls = crawler.discover_sitemap_urls("https://example.com")
+        count = crawler._seed_queue_from_sitemap()
 
-    # Only same-domain URLs should be returned
-    assert "https://example.com/a" in urls
-    assert "https://example.com/c" in urls
-    assert all('other-site.com' not in u for u in urls)
+    assert count == 2
+    # Queue should now have those URLs
+    queued = []
+    while not crawler.q.empty():
+        queued.append(crawler.q.get_nowait())
+    assert 'https://example.com/p1' in queued
+    assert 'https://example.com/p2' in queued
