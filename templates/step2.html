@@ -6,9 +6,9 @@
 <div class="card">
   <h1>Step 2 · Auditing your site</h1>
   <p class="hint">
-    Auditing <strong>{{ job.url }}</strong>. Keep this tab open and watch
-    progress — or copy the URL of this page if you need to close the tab,
-    you can come back to it.
+    Auditing <strong>{{ job.url }}</strong>. You can leave this tab open and
+    watch progress, or close it and wait for the email{% if not job.email %}
+    (you didn't provide an email, so keep this tab open or copy the URL){% endif %}.
   </p>
 
   <div class="progress-block">
@@ -95,20 +95,6 @@
       $pct.textContent = (j.percent || 0) + "%";
       $time.textContent = (j.elapsed_seconds || 0) + "s";
       $url.textContent = j.current_url || "";
-
-      // Friendly hints when nothing is progressing yet, so users know
-      // it's working and not stuck. Render free tier cold-starts can
-      // delay the first page fetch by 30-60 seconds.
-      const elapsed = j.elapsed_seconds || 0;
-      const noProgress = (j.current || 0) === 0;
-      if (noProgress && j.phase !== "done") {
-        let hint = "";
-        if (elapsed < 20)      hint = " (warming up)";
-        else if (elapsed < 60) hint = " (waking the server — typical on free tier)";
-        else if (elapsed < 120) hint = " (slow first page load — please wait)";
-        else                    hint = " (taking longer than expected — check Render logs if no progress soon)";
-        $phase.textContent = (phaseLabels[j.phase] || j.phase) + hint;
-      }
 
       // Timeline state
       if (j.phase === "crawling")    { markStep("step-crawl", "active"); }
