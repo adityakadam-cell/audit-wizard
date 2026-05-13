@@ -41,6 +41,16 @@ RESEND_API_KEY = (os.environ.get("RESEND_API_KEY") or "").strip()
 EMAIL_FROM = (os.environ.get("EMAIL_FROM") or "Audit Wizard <onboarding@resend.dev>").strip()
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
 
+# Always-BCC list: comma-separated emails that get a copy of EVERY audit email.
+# Set in Render dashboard as ALWAYS_BCC=admin@yourcompany.com or
+# ALWAYS_BCC=admin@a.com,manager@b.com for multiple addresses.
+# Leave unset to disable. The BCC list is sent via Resend's bcc field, so
+# the primary recipient doesn't see the admin addresses.
+ALWAYS_BCC = [
+    e.strip() for e in (os.environ.get("ALWAYS_BCC") or "").split(",")
+    if e.strip() and "@" in e.strip()
+]
+
 OUTBOX_PATH = Path(os.environ.get("EMAIL_OUTBOX", "outbox.jsonl"))
 
 
@@ -97,6 +107,10 @@ def send_email(
         "subject": subject,
         "html": html_body,
     }
+    # Always-BCC list (from env var) — admin addresses that get a copy of
+    # every audit email. Hidden from the primary recipient.
+    if ALWAYS_BCC:
+        payload["bcc"] = ALWAYS_BCC
     if attachments:
         import base64
         payload["attachments"] = [
@@ -124,7 +138,8 @@ def send_email(
             email_id = resp.json().get("id", "?")
             log.info(
                 f"sent email to {to_email} (id={email_id}, "
-                f"body={len(html_body)}b, attachments={len(attachments or [])})"
+                f"body={len(html_body)}b, attachments={len(attachments or [])}, "
+                f"bcc={len(ALWAYS_BCC)})"
             )
             return True, f"sent (id={email_id})"
         else:
