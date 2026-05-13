@@ -129,21 +129,45 @@ def step1():
                               target_keyword=target_keyword,
                               deep_audit=deep_audit)
 
-        # Post-audit hook: send email with executive summary + top
-        # design-based recommendations + link to full report.
+        # Post-audit hook: send email with FULL inline detail + attachments.
+        # Email contains: health card, top 5 recommendations with action steps,
+        # 27-point checklist summary, every page with every issue inline,
+        # AND the HTML/Excel/CSV reports as attachments.
         def on_complete(j):
             if not j.email or j.status != "done":
                 return
             try:
-                # Lazy-import here to avoid loading audit_engine at app boot
-                # if it ever fails — keeps the rest of the app working.
-                from audit_engine import top_recommendations, overall_health_summary
+                # Lazy-import here so audit_engine failures don't break app boot.
+                from audit_engine import (
+                    top_recommendations, overall_health_summary,
+                    aggregate_checklist,
+                )
                 summary = jobs.get_summary_stats(j)
                 recs = top_recommendations(j.results, n=5)
                 health = overall_health_summary(j.results)
+                checklist_summary = aggregate_checklist(j.results)
+
+                # Pull the generated reports off the job — these were
+                # produced during the "generating" phase and stored on the
+                # job object. Attaching them gives users the complete data
+                # in formats they can save / forward / analyze.
+                report_html_bytes = (
+                    j.report_html.encode("utf-8") if j.report_html else None
+                )
+                report_csv_bytes = (
+                    j.report_csv.encode("utf-8") if j.report_csv else None
+                )
+                report_xlsx_bytes = j.report_xlsx  # already bytes
+
                 ok, msg = email_sender.send_audit_complete(
                     j.email, j.url, j.id, summary,
-                    recommendations=recs, health=health,
+                    recommendations=recs,
+                    health=health,
+                    results=j.results,
+                    checklist_summary=checklist_summary,
+                    report_html_bytes=report_html_bytes,
+                    report_xlsx_bytes=report_xlsx_bytes,
+                    report_csv_bytes=report_csv_bytes,
                 )
                 log.info(f"[job {j.id}] email send: ok={ok} msg={msg}")
             except Exception as e:
