@@ -6,9 +6,10 @@
 <div class="card">
   <h1>Step 1 · Start a new audit</h1>
   <p class="hint">
-    Enter a website URL. The wizard will crawl the site (following menu and
-    footer links), check each page for SEO, HTML, performance, and content
-    issues, and produce an interactive report you can download or email.
+    Enter a website URL. The wizard reads sitemap.xml when available
+    (and falls back to following menu/footer links), audits each page
+    against the 27-point checklist, and emails the full report with
+    design-based recommendations.
   </p>
 
   <form method="POST" action="{{ url_for('step1') }}" class="audit-form">
@@ -87,23 +88,6 @@
     <p class="hint">
       You can close the tab — we'll email a link to the report when it's ready.
       Leave blank if you'd rather wait on the progress page.
-    </p>
-
-    <label for="target_keyword">
-      Target keyword <small style="color:#888">(optional)</small>
-    </label>
-    <input
-      type="text"
-      id="target_keyword"
-      name="target_keyword"
-      placeholder='e.g. "SS 304 seamless pipe"'
-      maxlength="100"
-      value="{{ form_target_keyword|default('') }}"
-    >
-    <p class="hint">
-      If you provide one, every page is checked for keyword density, placement
-      in title/H1, and over-stuffing. Leave blank to skip the keyword-specific
-      checks (checklist item #13).
     </p>
 
     <label class="checkbox-row">
