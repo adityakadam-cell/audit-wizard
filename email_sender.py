@@ -115,51 +115,150 @@ def send_email(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
 
 def send_audit_complete(
     to_email: str, site_url: str, job_id: str, summary: dict,
+    recommendations: Optional[list[dict]] = None,
+    health: Optional[dict] = None,
 ) -> tuple[bool, str]:
     """
-    Send the 'your audit is ready' notification with a link back to the
-    results page. The HTML report itself is NOT attached — too large for
-    most emails and we'd need to spool it. Link is safer.
+    Send the audit-ready email. Includes:
+      - Overall health card (grade, avg score, issue counts)
+      - Top 5 design-based recommendations (the actually-useful content)
+      - Link to the full interactive report
+
+    recommendations: list of dicts from audit_engine.top_recommendations(),
+                     or None to fall back to a minimal email.
+    health:          dict from audit_engine.overall_health_summary(),
+                     or None to use the older 'summary' shape.
     """
     base = PUBLIC_BASE_URL or "https://your-app.onrender.com"
     results_url = f"{base}/job/{job_id}/results"
 
-    subject = f"Audit ready: {site_url}"
+    # Build the recommendations block — this is the differentiator
+    recs_html = ""
+    if recommendations:
+        theme_colors = {
+            'seo':     ('#2b6cb0', '#ebf4ff'),
+            'design':  ('#6b46c1', '#faf5ff'),
+            'content': ('#2f855a', '#f0fff4'),
+            'trust':   ('#c05621', '#fffaf0'),
+            'tech':    ('#c53030', '#fff5f5'),
+        }
+        sev_label = {'critical': 'CRITICAL', 'warning': 'WARNING', 'info': 'IMPROVEMENT'}
+        sev_color = {'critical': '#c53030', 'warning': '#c05621', 'info': '#2b6cb0'}
+
+        rec_cards = []
+        for i, r in enumerate(recommendations[:5], 1):
+            tc_fg, tc_bg = theme_colors.get(r.get('theme', 'seo'), ('#4a5568', '#f7fafc'))
+            sev = r.get('severity', 'info')
+            actions = ''.join(
+                f'<li style="margin-bottom:4px">{_e(a)}</li>'
+                for a in r.get('action_steps', [])[:3]
+            )
+            rec_cards.append(f"""
+<div style="border:1px solid #e2e8f0;border-radius:7px;padding:14px 16px;
+            margin-bottom:10px;background:#fafbfc">
+  <div style="font-size:11px;margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap">
+    <span style="color:#a0aec0;font-weight:700">#{i}</span>
+    <span style="color:{tc_fg};background:{tc_bg};padding:2px 7px;border-radius:3px;
+                 font-weight:600;letter-spacing:.3px">{_e(r.get('theme_label', ''))}</span>
+    <span style="color:{sev_color[sev]};font-weight:700;letter-spacing:.3px">
+      {sev_label[sev]}
+    </span>
+    <span style="color:#718096;margin-left:auto">
+      {r.get('affected_pages', 0)} of {r.get('total_pages', 0)} pages
+    </span>
+  </div>
+  <h3 style="font-size:14px;font-weight:600;color:#2d3748;margin:4px 0 6px">
+    {_e(r.get('headline', ''))}
+  </h3>
+  <p style="font-size:12.5px;color:#4a5568;line-height:1.55;margin:0 0 8px">
+    {_e(r.get('why', ''))}
+  </p>
+  <div style="font-size:12px;color:#2d3748">
+    <strong style="color:#3182ce">Action steps:</strong>
+    <ol style="margin:6px 0 0 22px;line-height:1.55">{actions}</ol>
+  </div>
+</div>""")
+
+        recs_html = f"""
+<h2 style="font-size:17px;color:#2d3748;margin:24px 0 4px">Top Recommendations</h2>
+<p style="font-size:13px;color:#718096;margin:0 0 14px">
+  Design-based suggestions ordered by impact across your site. Start at the top.
+</p>
+{''.join(rec_cards)}"""
+
+    # Health card
+    h = health or {}
+    grade = h.get('grade', 'N/A')
+    grade_color = {'A': '#22543d', 'B': '#2f855a', 'C': '#c05621',
+                   'D': '#c53030', 'F': '#742a2a'}.get(grade, '#4a5568')
+    grade_bg = {'A': '#c6f6d5', 'B': '#d4f1de', 'C': '#feebc8',
+                'D': '#fed7d7', 'F': '#fed7d7'}.get(grade, '#edf2f7')
+
+    page_count = h.get('page_count', summary.get('page_count', 0))
+    avg_score = h.get('avg_score', summary.get('avg_score', 0))
+    critical = h.get('critical_issues', summary.get('critical_total', 0))
+    warnings = h.get('warning_issues', summary.get('warning_total', 0))
+
+    subject = f"Audit ready: {site_url} — Grade {grade} ({critical} critical, {warnings} warnings)"
     html_body = f"""\
 <!DOCTYPE html>
-<html><body style="font-family:system-ui,sans-serif;color:#1a202c;
-max-width:560px;margin:24px auto;padding:0 20px">
-  <h2 style="color:#2d3748">Your website audit is ready</h2>
-  <p>The audit for <strong>{site_url}</strong> has finished.</p>
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+color:#1a202c;max-width:640px;margin:0 auto;padding:24px 20px;background:#f7fafc">
+  <div style="background:#fff;border-radius:9px;padding:24px;
+              box-shadow:0 1px 3px rgba(0,0,0,.06)">
 
-  <table cellpadding="10" cellspacing="0" style="border-collapse:collapse;
-  margin:14px 0;font-size:14px">
-    <tr><td style="border:1px solid #e2e8f0;background:#f7fafc">Pages scanned</td>
-        <td style="border:1px solid #e2e8f0"><b>{summary.get('page_count', 0)}</b></td></tr>
-    <tr><td style="border:1px solid #e2e8f0;background:#f7fafc">Average score</td>
-        <td style="border:1px solid #e2e8f0"><b>{summary.get('avg_score', 0)} / 100</b></td></tr>
-    <tr><td style="border:1px solid #e2e8f0;background:#f7fafc">Critical issues</td>
-        <td style="border:1px solid #e2e8f0;color:#c53030">
-          <b>{summary.get('critical_total', 0)}</b></td></tr>
-    <tr><td style="border:1px solid #e2e8f0;background:#f7fafc">Warnings</td>
-        <td style="border:1px solid #e2e8f0;color:#c05621">
-          <b>{summary.get('warning_total', 0)}</b></td></tr>
-  </table>
+    <h2 style="color:#2d3748;margin:0 0 4px;font-size:22px">
+      Your website audit is ready
+    </h2>
+    <p style="color:#4a5568;margin:0 0 18px;font-size:14px">
+      Full audit complete for <strong>{_e(site_url)}</strong>.
+    </p>
 
-  <p>
-    <a href="{results_url}" style="display:inline-block;padding:11px 22px;
-    background:#3182ce;color:#fff;border-radius:6px;text-decoration:none;
-    font-weight:600">View Full Report</a>
-  </p>
+    <!-- Health summary card -->
+    <div style="display:flex;align-items:center;gap:16px;padding:16px;
+                background:#f7fafc;border-radius:8px;margin-bottom:18px">
+      <div style="width:72px;height:72px;border-radius:50%;background:{grade_bg};
+                  color:{grade_color};display:flex;align-items:center;
+                  justify-content:center;font-size:34px;font-weight:700;
+                  flex-shrink:0">{grade}</div>
+      <div>
+        <div style="font-size:13px;color:#718096;margin-bottom:2px">Overall site health</div>
+        <div style="font-size:22px;font-weight:700;color:#2d3748">
+          {avg_score} <span style="color:#a0aec0;font-size:14px">/ 100</span>
+        </div>
+        <div style="font-size:12px;color:#718096;margin-top:4px">
+          {page_count} pages audited &nbsp;·&nbsp;
+          <span style="color:#c53030;font-weight:600">{critical} critical</span> &nbsp;·&nbsp;
+          <span style="color:#c05621;font-weight:600">{warnings} warnings</span>
+        </div>
+      </div>
+    </div>
 
-  <p style="color:#718096;font-size:13px;margin-top:24px">
-    The report stays online for 1 hour after generation. Download the
-    HTML / Excel / CSV from the results page if you need to keep it.
-  </p>
-  <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
-  <p style="color:#a0aec0;font-size:12px">
-    Sent by Audit Wizard. You're receiving this because you entered this
-    email address when starting the audit.
-  </p>
+    <!-- Top recommendations -->
+    {recs_html}
+
+    <!-- CTA to full report -->
+    <p style="margin:24px 0">
+      <a href="{results_url}" style="display:inline-block;padding:12px 26px;
+      background:#3182ce;color:#fff;border-radius:6px;text-decoration:none;
+      font-weight:600;font-size:14px">View Full Report →</a>
+    </p>
+    <p style="color:#718096;font-size:12px;margin-top:6px">
+      Full report includes the 27-point checklist, per-page issue breakdown,
+      and downloadable HTML / Excel / CSV. Available for 1 hour after generation.
+    </p>
+
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px">
+    <p style="color:#a0aec0;font-size:11.5px;margin:0">
+      Sent by Audit Wizard. You're receiving this because you entered this
+      email address when starting the audit.
+    </p>
+  </div>
 </body></html>"""
     return send_email(to_email, subject, html_body)
+
+
+def _e(s) -> str:
+    """HTML-escape helper, also used inline above."""
+    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))

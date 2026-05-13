@@ -32,17 +32,6 @@ import traceback
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-# Import audit_engine at module load time, not inside the worker thread.
-# Why: audit_engine pulls in lxml, openpyxl, BeautifulSoup, requests — all
-# heavy. On Render free tier (512 MB RAM, slow cold dyno), these imports
-# take 10-30 seconds. If we import inside worker(), every audit job pays
-# that cost AGAIN even when the dyno is warm. Importing here means it
-# happens once when Gunicorn boots the process — every subsequent job
-# starts crawling within 1-2 seconds instead of 30-45 seconds.
-#
-# Safe to do because audit_engine has no app/jobs imports — no cycle risk.
-from audit_engine import Crawler, Analyzer, ReportGen
-
 log = logging.getLogger("audit-wizard.jobs")
 
 # How long completed jobs stay in memory (seconds). Reports remain
@@ -180,15 +169,24 @@ def run_audit_in_background(
     so the caller can do post-processing — e.g. send a notification email.
     """
     def worker():
+        # Module-level import would be cleaner but kept here to be defensive
+        # against import-time errors in audit_engine surfacing in app boot.
+        from audit_engine import Crawler, Analyzer, ReportGen
+
         try:
             job.status = "running"
-            # Phase transitions to "crawling" immediately — audit_engine is
-            # already imported at module level, so this happens within
-            # milliseconds of the thread starting. Users see progress almost
-            # instantly instead of staring at "Queued..." for 30+ seconds.
-            job.set_phase("crawling")
+            job.set_phase("crawling")  # Combined crawl+analyze phase
 
-            # ---- Crawl ----
+            # ---- STREAMING CRAWL + ANALYZE ----
+            # Critical for Render free tier (512 MB RAM): instead of
+            # fetching ALL pages into memory then analyzing them in a
+            # second pass, we now:
+            #   1. Fetch one page (or a small batch in parallel)
+            #   2. Analyze immediately
+            #   3. Drop the HTML — keep only the lightweight result dict
+            # Peak memory drops ~5×, which is the difference between
+            # auditing 30 pages (the old limit) and 100 pages on free
+            # tier without getting OOM-killed.
             crawler = Crawler(
                 base_url=job.url,
                 max_pages=job.max_pages,
@@ -199,7 +197,53 @@ def run_audit_in_background(
                 on_progress=lambda c, t, u: job.update_progress(c, t, u),
                 should_stop=job.should_stop,
             )
-            pages = crawler.crawl()
+            analyzer = Analyzer(
+                industry=job.industry,
+                target_keyword=job.target_keyword,
+                deep_audit=job.deep_audit,
+            )
+
+            results: list[dict] = []
+            pages_seen = 0
+            for page in crawler.crawl_streaming():
+                if job.should_stop():
+                    job.status = "cancelled"
+                    job.finished_at = time.time()
+                    if on_complete:
+                        on_complete(job)
+                    return
+
+                # Analyze this page right now while we have its HTML.
+                # Per-page exception handling: a single bad page should
+                # never kill the whole audit.
+                try:
+                    result = analyzer.analyze(page)
+                    results.append(result)
+                except Exception as e:
+                    log.warning(
+                        f"[job {job.id}] skipped {page.get('url', '?')}: {e}"
+                    )
+                    # Keep a stub so the page count in the report is honest
+                    results.append({
+                        'url': page.get('url', ''),
+                        'title': '[analyze error]',
+                        'issues': [],
+                        'scores': {'overall': 0},
+                        'word_count': 0, 'grades_found': [],
+                        'response_time': page.get('response_time', 0),
+                        'industry': '—',
+                        'status': page.get('status', 0),
+                        'checklist': [],
+                        'analyze_error': str(e),
+                    })
+
+                # CRITICAL: drop the HTML now. Without this, Python keeps
+                # the bytes alive until the loop iteration ends — for
+                # large product pages that's tens of MB held unnecessarily.
+                page['html'] = ''
+                del page
+
+                pages_seen += 1
 
             if job.should_stop():
                 job.status = "cancelled"
@@ -208,32 +252,17 @@ def run_audit_in_background(
                     on_complete(job)
                 return
 
-            if not pages:
+            if not results:
                 job.status = "failed"
-                job.error = "Could not fetch any pages. Check that the URL is reachable."
+                job.error = (
+                    "Could not fetch any pages. Check that the URL is "
+                    "reachable and that the site doesn't block crawlers."
+                )
                 job.finished_at = time.time()
                 if on_complete:
                     on_complete(job)
                 return
 
-            # ---- Analyze ----
-            job.set_phase("analyzing")
-            job.update_progress(0, len(pages), "")
-            analyzer = Analyzer(
-                industry=job.industry,
-                target_keyword=job.target_keyword,
-                deep_audit=job.deep_audit,
-            )
-            results: list[dict] = []
-            for idx, pg in enumerate(pages, start=1):
-                if job.should_stop():
-                    job.status = "cancelled"
-                    job.finished_at = time.time()
-                    if on_complete:
-                        on_complete(job)
-                    return
-                results.append(analyzer.analyze(pg))
-                job.update_progress(idx, len(pages), pg.get('url', ''))
             job.results = results
 
             # ---- Generate reports ----

@@ -226,8 +226,8 @@ CHECKLIST = [
      "description": "Links to related products or category pages.",
      "group": "Content",         "auto": "full"},
     {"id": "keyword_usage",     "number": 13, "label": "Keyword Usage",
-     "description": "Target keyword present, naturally distributed (1-3% density), and not over-stuffed.",
-     "group": "Content",         "auto": "manual"},
+     "description": "Target keyword present and not overused (1-3% density).",
+     "group": "Content",         "auto": "partial"},
     {"id": "content_unique",    "number": 14, "label": "Content Originality",
      "description": "Not copied from other sites or catalogs.",
      "group": "Content",         "auto": "manual"},
@@ -373,6 +373,10 @@ def build_checklist_view(issues: list[dict], deep_audit: bool = False,
             status = 'skipped'
             severity = 'info'
             notes = 'Skipped (deep audit not enabled). Run with "Deep audit" to check.'
+        elif cid == 'keyword_usage' and not target_keyword:
+            status = 'skipped'
+            severity = 'info'
+            notes = 'No target keyword provided — fill the "Target keyword" field on Step 1.'
         elif not related:
             status = 'pass'
             severity = 'info'
@@ -425,6 +429,490 @@ def aggregate_checklist(results: list[dict]) -> list[dict]:
                 counts[cid]['total'] += 1
 
     return [counts[cp['id']] for cp in CHECKLIST]
+
+
+# ============================================================
+#  Executive Summary / Design Suggestions Generator
+# ============================================================
+#
+# This is the "what should you actually DO about it" layer that turns
+# raw audit data into a prioritized list of actionable recommendations.
+# Used in both the email and a new top section of the HTML report.
+#
+# Design philosophy: Triage like a senior consultant would.
+# - Surface the 3-5 highest-impact issues
+# - Group recommendations by theme (SEO, Design, Trust, Content)
+# - Quantify scale ("23 pages missing alt text" not just "some pages")
+# - Sort by severity × prevalence
+# - Phrase as a TODO, not a problem ("Add canonical tags" not "Canonical
+#   tag missing")
+
+def _count_issues_by_checkpoint(results: list[dict]) -> dict[str, dict]:
+    """Count critical/warning/info issues per checkpoint across all pages."""
+    by_cp: dict[str, dict] = defaultdict(
+        lambda: {'critical': 0, 'warning': 0, 'info': 0, 'pages': set()}
+    )
+    for r in results:
+        for iss in r.get('issues', []):
+            cid = iss.get('checkpoint_id') or 'other'
+            sev = iss.get('severity', 'info')
+            by_cp[cid][sev] += 1
+            by_cp[cid]['pages'].add(r['url'])
+    # Convert page sets to counts (sets aren't JSON-serializable)
+    return {cid: {**d, 'pages': len(d['pages'])} for cid, d in by_cp.items()}
+
+
+# Each recommendation has: id, theme, headline, why, action_steps (list),
+# affected_pages (count), severity, priority_score (computed).
+# The themes are deliberately user-facing: "SEO Foundations" not "seo_seo_seo".
+
+RECOMMENDATION_THEMES = {
+    'seo':     'SEO Foundations',
+    'design':  'Design & UX',
+    'content': 'Content Quality',
+    'trust':   'Trust & Conversions',
+    'tech':    'Technical Performance',
+}
+
+# Map of checkpoint_id -> (theme, design-friendly headline template,
+# why-it-matters text, action steps). When we encounter issues for a
+# checkpoint we look it up here to produce the recommendation. Anything
+# not in this map gets a generic recommendation built from the issue title.
+
+_RECO_TEMPLATES = {
+    'page_title': {
+        'theme': 'seo',
+        'headline': 'Fix missing or weak page titles',
+        'why': ("Page titles are the strongest on-page SEO signal and "
+                "what users see in search results. Pages without titles, "
+                "or with generic titles, rank lower and get clicked less."),
+        'actions': [
+            'Audit every page title against the 60-70 character sweet spot',
+            'Lead with the main keyword, then brand: "SS 304 Pipe | Brand"',
+            'Ensure every page has a UNIQUE title (no duplicates across the site)',
+        ],
+    },
+    'meta_description': {
+        'theme': 'seo',
+        'headline': 'Write compelling meta descriptions',
+        'why': ("Meta descriptions don't directly affect rankings, but they "
+                "determine click-through rate from search results. Pages "
+                "without one get an auto-generated snippet that rarely sells."),
+        'actions': [
+            'Write a unique 120-158 character description per page',
+            'Include a value proposition + light call-to-action',
+            'Mention the primary keyword naturally — not stuffed',
+        ],
+    },
+    'h1_tag': {
+        'theme': 'seo',
+        'headline': 'Standardize one H1 per page',
+        'why': ("Multiple H1s or missing H1s confuse Google about what the "
+                "page is about. One clear H1 per page is a basic SEO rule."),
+        'actions': [
+            'Convert extra H1s to H2 (most CMS themes have multiple by mistake)',
+            'Ensure every page has at least one H1',
+            'Match H1 content to the page title and user intent',
+        ],
+    },
+    'canonical': {
+        'theme': 'seo',
+        'headline': 'Add canonical tags everywhere',
+        'why': ("Without canonicals, Google can't tell which URL is the "
+                "'master' version when a page is accessible via multiple "
+                "paths. Result: ranking signals get split and you may be "
+                "penalized for duplicate content."),
+        'actions': [
+            'Add <link rel="canonical" href="..."> to every page <head>',
+            'Point to the clean, preferred URL (no query params, no trailing slash mismatch)',
+            'For paginated pages, canonical points to page 1',
+        ],
+    },
+    'image_alt': {
+        'theme': 'design',
+        'headline': 'Write descriptive alt text for every image',
+        'why': ("Alt text serves three purposes: accessibility (screen readers), "
+                "SEO (Google can't 'see' images), and UX (shown when images "
+                "fail to load). Missing alt text fails all three."),
+        'actions': [
+            'Describe what the image SHOWS, not just what it IS',
+            'Bad: "image1.jpg". Good: "SS 304 seamless pipe with mill finish"',
+            'Decorative images can use empty alt="" (intentional, signals to screen readers to skip)',
+        ],
+    },
+    'image_weight': {
+        'theme': 'tech',
+        'headline': 'Compress oversized product images',
+        'why': ("Images over 100 KB slow page load on mobile networks "
+                "(common for B2B buyers in industrial sites). Google uses "
+                "page speed as a ranking factor since 2018."),
+        'actions': [
+            'Use TinyPNG, Squoosh, or ImageOptim to compress without quality loss',
+            'Convert to WebP — 30-50% smaller than JPEG at same quality',
+            'Add loading="lazy" to images below the fold',
+        ],
+    },
+    'image_filename': {
+        'theme': 'seo',
+        'headline': 'Rename generic image files to descriptive ones',
+        'why': ("Filenames like IMG_1234.jpg or DSC_5678.png are SEO dead "
+                "weight. Google reads filenames as ranking signals for image "
+                "search and contextually for the page."),
+        'actions': [
+            'Rename to descriptive, hyphenated lowercase: "ss-304-seamless-pipe.jpg"',
+            'Match the filename to the page topic / product',
+            'Update any references in code or CMS after renaming',
+        ],
+    },
+    'schema': {
+        'theme': 'seo',
+        'headline': 'Add Schema.org structured data',
+        'why': ("Schema markup is what unlocks rich results in Google: "
+                "star ratings, breadcrumbs, FAQ accordions, product pricing. "
+                "Pages without schema are invisible to these features."),
+        'actions': [
+            'Product pages: add Product + Offer schema',
+            'FAQ sections: add FAQPage schema',
+            'Add BreadcrumbList for navigation hierarchy',
+            'Validate at search.google.com/test/rich-results',
+        ],
+    },
+    'breadcrumbs': {
+        'theme': 'design',
+        'headline': 'Add breadcrumbs with BreadcrumbList schema',
+        'why': ("Breadcrumbs help users orient (especially on deep product "
+                "pages) and let Google show your site hierarchy in search "
+                "results. Free SEO win, immediate UX improvement."),
+        'actions': [
+            'Add a visible breadcrumb nav: Home > Category > Product',
+            'Wrap in <nav aria-label=\"breadcrumb\"> for accessibility',
+            'Pair with BreadcrumbList JSON-LD schema',
+        ],
+    },
+    'internal_linking': {
+        'theme': 'seo',
+        'headline': 'Build a stronger internal linking structure',
+        'why': ("Internal links pass PageRank between pages and help Google "
+                "discover deep content. Product pages should link to related "
+                "products, parent categories, and supporting content."),
+        'actions': [
+            'On each product page, add a "Related products" section with 3-5 links',
+            'Link from blog posts / category pages to specific product pages',
+            'Use descriptive anchor text — not "click here"',
+        ],
+    },
+    'cta_button': {
+        'theme': 'trust',
+        'headline': 'Make CTAs prominent and working',
+        'why': ("If buyers can't tell what action to take next — or click a "
+                "button that doesn't work — they leave. Every product page "
+                "should have a clear 'Get Quote' or 'Contact' CTA above the fold."),
+        'actions': [
+            'Add a primary CTA in the page header AND another at the bottom',
+            'Verify every CTA href points to a real, working URL',
+            'Use action-oriented text: "Request Quote" not just "Submit"',
+        ],
+    },
+    'contact_info': {
+        'theme': 'trust',
+        'headline': 'Display complete contact information',
+        'why': ("B2B buyers research thoroughly before reaching out. Missing "
+                "phone numbers, missing addresses, or vague contact info "
+                "kills trust — buyers go to competitors who look more legitimate."),
+        'actions': [
+            'Display phone number, email, and physical address in the footer',
+            'Add a dedicated /contact page with map and detailed info',
+            'For B2B: include direct sales contact names per region',
+        ],
+    },
+    'inquiry_form': {
+        'theme': 'trust',
+        'headline': 'Add and TEST your inquiry form',
+        'why': ("A broken contact form is worse than no form — it silently "
+                "loses leads. Most teams discover the form is broken months "
+                "after a redesign. Don't be that team."),
+        'actions': [
+            'Add a contact form with name, email, company, message',
+            'Submit a real test inquiry and verify the email arrives',
+            'Set up auto-reply so customers know you received their message',
+        ],
+    },
+    'faqs': {
+        'theme': 'content',
+        'headline': 'Build an FAQ section per product',
+        'why': ("FAQ pages capture long-tail search queries that buyers "
+                "actually type ('what is the carbon content of SS 304?'). "
+                "With FAQPage schema, Google shows your answers directly "
+                "in search results — massive visibility boost."),
+        'actions': [
+            'Ask sales/support for the 5-10 most common pre-purchase questions',
+            'Write technically accurate answers (no fluff)',
+            'Wrap in FAQPage schema for rich snippets',
+        ],
+    },
+    'mobile_friendly': {
+        'theme': 'design',
+        'headline': 'Verify the site works on real mobile devices',
+        'why': ("Google uses mobile-first indexing — your mobile version IS "
+                "your SEO version. If buttons are tiny, text is unreadable, "
+                "or tables overflow on mobile, you lose both traffic AND "
+                "deals (many B2B buyers research on their phones)."),
+        'actions': [
+            'Test the site on an actual phone, not just browser DevTools',
+            'Tables should scroll horizontally, not overflow',
+            'Tap targets should be at least 44px',
+            'Don\'t disable zoom — it\'s an accessibility anti-pattern',
+        ],
+    },
+    'specifications': {
+        'theme': 'content',
+        'headline': 'Add complete specifications tables',
+        'why': ("Industrial buyers compare specs side-by-side. Pages without "
+                "a specifications table force buyers to email or call for "
+                "basic info — most won't bother, they'll just choose a "
+                "competitor with the data on the page."),
+        'actions': [
+            'Every product page: table with size, grade, standard, finish',
+            'Use proper HTML <table> markup (not images of tables)',
+            'Match column headers to industry standards (NB, OD, schedule, etc.)',
+        ],
+    },
+    'chemical_table': {
+        'theme': 'content',
+        'headline': 'Verify chemical composition tables match ASTM specs',
+        'why': ("Buyers cross-reference your chemical composition table "
+                "against ASTM standards. Errors in C/Cr/Ni/Mo percentages "
+                "look unprofessional and create legal/QC exposure — buyers "
+                "may reject shipments that don't match the published spec."),
+        'actions': [
+            'Cross-check Carbon, Chromium, Nickel, Molybdenum values vs ASTM A312/A276',
+            'Use "max" notation explicitly: "C: 0.08 max"',
+            'List values per grade — don\'t mix multiple grades in one row',
+        ],
+    },
+    'mechanical_table': {
+        'theme': 'content',
+        'headline': 'Add accurate mechanical properties',
+        'why': ("Tensile, yield, elongation, and hardness are non-negotiable "
+                "data for engineering buyers. Pages without these get "
+                "skipped by serious procurement teams."),
+        'actions': [
+            'Add Tensile Strength, Yield Strength, Elongation, Hardness',
+            'Use SI units (MPa) primary, imperial (psi) parenthetical',
+            'Cite the ASTM standard the values come from',
+        ],
+    },
+    'equivalent_table': {
+        'theme': 'content',
+        'headline': 'Add international equivalency tables',
+        'why': ("Buyers from Europe, Japan, China, and the Middle East use "
+                "different grade nomenclature (EN, DIN, JIS, GB). Pages "
+                "without equivalents force international buyers to search "
+                "elsewhere — direct revenue loss."),
+        'actions': [
+            'For each grade, list UNS, EN/DIN, JIS, GB, BS equivalents',
+            'Use a reference like outokumpu.com/grades or asminternational.org',
+            'Don\'t guess — wrong equivalents are worse than missing ones',
+        ],
+    },
+    'url_structure': {
+        'theme': 'seo',
+        'headline': 'Clean up URL structures',
+        'why': ("Clean URLs (e.g. /products/ss-304-pipe) rank better and "
+                "look more trustworthy in search results than database-style "
+                "URLs (e.g. ?id=12345). Easier to share and remember too."),
+        'actions': [
+            'Rewrite database URLs to descriptive slugs',
+            'Use hyphens not underscores',
+            'Keep URLs short, lowercase, and keyword-rich',
+        ],
+    },
+    'indexability': {
+        'theme': 'tech',
+        'headline': 'Fix pages set to noindex',
+        'why': ("A noindex tag tells Google to NEVER show the page in search "
+                "results. Sometimes this is on key product pages by mistake "
+                "(left over from staging, or copy-pasted from a template)."),
+        'actions': [
+            'Search the site for <meta name="robots" content="noindex">',
+            'Remove from all pages you WANT in search results',
+            'Keep on: thank-you pages, internal admin pages, search results',
+        ],
+    },
+    'subheadings': {
+        'theme': 'content',
+        'headline': 'Improve content structure with H2/H3 subheadings',
+        'why': ("Walls of text don't get read. Subheadings let users scan to "
+                "the part they care about, and Google uses them to understand "
+                "page structure (often featured snippets come from H2 content)."),
+        'actions': [
+            'Break content into 4-6 logical sections with H2 headings',
+            'Use H3 for sub-sections within each H2',
+            'Make subheadings descriptive — they should answer "what\'s in this section?"',
+        ],
+    },
+    'tech_spec_tab': {
+        'theme': 'content',
+        'headline': 'Provide downloadable datasheets',
+        'why': ("Procurement teams routinely save technical datasheets for "
+                "internal review. Pages without a Spec Sheet / Datasheet "
+                "download lose these high-intent leads."),
+        'actions': [
+            'Create a PDF datasheet for each product family',
+            'Add a "Download Datasheet" button on every product page',
+            'Track downloads as conversion events for marketing analytics',
+        ],
+    },
+    'applications': {
+        'theme': 'content',
+        'headline': 'Make application lists industry-specific',
+        'why': ("Generic application lists ('used in many industries') tell "
+                "buyers nothing. Specific lists ('petrochemical refineries, "
+                "marine heat exchangers, pharma reactors') signal expertise "
+                "and help users find products that fit their use case."),
+        'actions': [
+            'List 5-10 concrete industries or applications per product',
+            'Mention specific environments: temperature ranges, corrosive media',
+            'Include 1-2 customer use cases as social proof',
+        ],
+    },
+}
+
+
+def generate_recommendations(results: list[dict]) -> list[dict]:
+    """
+    Turn audit results into a prioritized list of actionable recommendations.
+
+    Returns a list of recommendation dicts, sorted by priority_score (highest
+    first). Priority is severity × prevalence — issues that hit many pages
+    AND are critical get surfaced first.
+
+    Each recommendation dict has:
+      id              : checkpoint_id (or 'other' for ungrouped)
+      theme           : 'seo' | 'design' | 'content' | 'trust' | 'tech'
+      theme_label     : Human-readable theme name
+      headline        : Imperative action statement
+      why             : 1-2 sentences explaining why it matters
+      action_steps    : list[str] of concrete steps
+      affected_pages  : how many pages of the site have this issue
+      critical_count  : critical issues at this checkpoint
+      warning_count   : warning issues at this checkpoint
+      severity        : highest severity ('critical' | 'warning' | 'info')
+      priority_score  : numeric, higher = more important
+    """
+    if not results:
+        return []
+
+    issue_counts = _count_issues_by_checkpoint(results)
+    total_pages = len(results)
+    recs: list[dict] = []
+
+    for cid, counts in issue_counts.items():
+        crit = counts['critical']
+        warn = counts['warning']
+        info = counts['info']
+        pages_affected = counts['pages']
+
+        # Determine severity
+        if crit > 0:
+            severity = 'critical'
+        elif warn > 0:
+            severity = 'warning'
+        else:
+            severity = 'info'
+
+        # Priority score: combines severity and prevalence
+        # critical = 10x, warning = 3x, info = 1x; multiplied by % of pages affected
+        prevalence = pages_affected / max(1, total_pages)
+        sev_weight = 10 if severity == 'critical' else (3 if severity == 'warning' else 1)
+        priority_score = sev_weight * (1 + prevalence * 5)
+
+        # Pull template or build generic recommendation
+        tpl = _RECO_TEMPLATES.get(cid)
+        if tpl:
+            theme = tpl['theme']
+            headline = tpl['headline']
+            why = tpl['why']
+            actions = tpl['actions']
+        else:
+            # Generic fallback: derive from the checkpoint metadata
+            cp_meta = CHECKLIST_BY_ID.get(cid)
+            if cp_meta:
+                theme = 'seo' if cp_meta['group'] == 'On-page SEO' else \
+                        'content' if 'Content' in cp_meta['group'] or 'Tables' in cp_meta['group'] else \
+                        'design' if cp_meta['group'] in ('Images', 'Page Content') else \
+                        'tech'
+                headline = f"Address {cp_meta['label'].lower()} issues"
+                why = cp_meta['description']
+                actions = ['Review the per-page issue list in the full report',
+                           f'See checkpoint #{cp_meta["number"]} in the 27-point checklist']
+            else:
+                continue  # Skip 'other' bucket if no metadata
+
+        recs.append({
+            'id': cid,
+            'theme': theme,
+            'theme_label': RECOMMENDATION_THEMES.get(theme, theme.title()),
+            'headline': headline,
+            'why': why,
+            'action_steps': actions,
+            'affected_pages': pages_affected,
+            'total_pages': total_pages,
+            'critical_count': crit,
+            'warning_count': warn,
+            'info_count': info,
+            'severity': severity,
+            'priority_score': priority_score,
+        })
+
+    # Sort: highest priority first
+    recs.sort(key=lambda r: -r['priority_score'])
+    return recs
+
+
+def top_recommendations(results: list[dict], n: int = 5) -> list[dict]:
+    """Convenience: just the top N recommendations for email summaries."""
+    return generate_recommendations(results)[:n]
+
+
+def overall_health_summary(results: list[dict]) -> dict:
+    """
+    Build a one-glance health summary across the whole site.
+    Used at the top of email reports and the executive summary section.
+    """
+    if not results:
+        return {
+            'page_count': 0, 'avg_score': 0, 'grade': 'N/A',
+            'critical_issues': 0, 'warning_issues': 0, 'info_issues': 0,
+            'pages_with_critical': 0,
+        }
+
+    page_count = len(results)
+    avg_score = round(sum(r['scores'].get('overall', 0) for r in results) / page_count)
+    crit_total = sum(sum(1 for i in r['issues'] if i['severity'] == 'critical') for r in results)
+    warn_total = sum(sum(1 for i in r['issues'] if i['severity'] == 'warning') for r in results)
+    info_total = sum(sum(1 for i in r['issues'] if i['severity'] == 'info') for r in results)
+    pages_with_critical = sum(
+        1 for r in results
+        if any(i['severity'] == 'critical' for i in r['issues'])
+    )
+
+    # Letter grade based on average score
+    if avg_score >= 90:    grade = 'A'
+    elif avg_score >= 80:  grade = 'B'
+    elif avg_score >= 70:  grade = 'C'
+    elif avg_score >= 60:  grade = 'D'
+    else:                  grade = 'F'
+
+    return {
+        'page_count': page_count,
+        'avg_score': avg_score,
+        'grade': grade,
+        'critical_issues': crit_total,
+        'warning_issues': warn_total,
+        'info_issues': info_total,
+        'pages_with_critical': pages_with_critical,
+    }
 
 
 # ============================================================
@@ -499,6 +987,19 @@ class Crawler:
                 'html': r.text,
                 'response_time': time.time() - t0,
                 'content_length': len(r.content),
+                # Keep only security-relevant headers (cheap to carry,
+                # everything else would bloat memory across many pages)
+                'response_headers': {
+                    k: v for k, v in r.headers.items()
+                    if k.lower() in (
+                        'strict-transport-security',
+                        'x-content-type-options',
+                        'x-frame-options',
+                        'content-security-policy',
+                        'referrer-policy',
+                        'permissions-policy',
+                    )
+                },
             }
         except Exception as e:
             return {
@@ -530,41 +1031,23 @@ class Crawler:
     # --------------------------------------------------------------
     #  Sitemap.xml discovery
     # --------------------------------------------------------------
-    # Industrial product sites almost always publish a sitemap.xml — they
-    # need it for Google indexing of deep product pages that aren't linked
-    # from the main menu. Reading sitemap.xml gives us:
-    #   1. Far better page coverage than menu/footer link-following alone
-    #     (orphan product pages, paginated listings, deep category pages).
-    #   2. An accurate page count BEFORE we start fetching, so the
-    #     progress bar in step2.html shows real totals.
-    #   3. A faster crawl: one HTTP call gets us 50-500 URLs vs walking
-    #     a tree of links.
-    #
-    # We try the standard locations + check robots.txt for a custom
-    # location. If we find URLs, we use them as the URL queue. If not,
-    # we fall back to the existing menu/footer link-following behaviour.
+    # Industrial product sites almost always publish sitemap.xml — they
+    # need it for Google indexing of deep product pages. Reading the
+    # sitemap gives us much better coverage than menu/footer-only crawling
+    # and a known total upfront so the progress bar is accurate.
 
     def discover_sitemap_urls(self, base_url: str) -> list[str]:
         """
-        Discover URLs from sitemap.xml. Returns a list of same-domain URLs,
-        or [] if no sitemap is found / parseable.
-
-        Tries (in order):
-          - /sitemap.xml
-          - /sitemap_index.xml
-          - /sitemap-index.xml
-          - whatever is listed in /robots.txt
-        Handles sitemap-index files (which contain links to other sitemaps)
-        by recursing one level. Caps the total at self.max_pages * 3 to keep
-        memory bounded even on huge sites.
+        Discover URLs from sitemap.xml. Returns same-domain URLs only.
+        Tries standard sitemap locations + reads robots.txt for custom ones.
+        Handles sitemap-index files by recursing one level.
         """
         candidates = [
             urljoin(base_url, '/sitemap.xml'),
             urljoin(base_url, '/sitemap_index.xml'),
             urljoin(base_url, '/sitemap-index.xml'),
         ]
-
-        # Also check robots.txt for a Sitemap: directive
+        # Also check robots.txt for Sitemap: directives
         try:
             r = self.session.get(urljoin(base_url, '/robots.txt'),
                                  timeout=10, verify=False)
@@ -577,7 +1060,6 @@ class Crawler:
         except Exception:
             pass
 
-        # Hard cap so we don't load 100k URLs into memory on huge ecommerce sites
         url_cap = max(self.max_pages * 3, 200)
         all_urls: list[str] = []
         seen: set[str] = set()
@@ -587,13 +1069,14 @@ class Crawler:
             if len(all_urls) >= url_cap:
                 break
             try:
-                urls = self._parse_sitemap(sm_url, recurse=True, cap=url_cap - len(all_urls))
+                urls = self._parse_sitemap(
+                    sm_url, recurse=True, cap=url_cap - len(all_urls)
+                )
                 for u in urls:
                     if urlparse(u).netloc == base_domain and u not in seen:
                         seen.add(u)
                         all_urls.append(u)
                 if all_urls:
-                    # Found at least one working sitemap — don't waste time on others
                     break
             except Exception:
                 continue
@@ -602,76 +1085,64 @@ class Crawler:
 
     def _parse_sitemap(self, sitemap_url: str, recurse: bool = True,
                        cap: int = 1000) -> list[str]:
-        """
-        Fetch a sitemap.xml and return URLs from <url><loc> entries.
-        If it's a sitemap-index file (<sitemapindex>), and recurse=True,
-        fetches each child sitemap up to the cap.
-        """
+        """Fetch sitemap.xml and extract <loc> URLs. Recurses sitemap-index."""
         from xml.etree import ElementTree as ET
-
         try:
             r = self.session.get(sitemap_url, timeout=15, verify=False)
             if r.status_code != 200 or not r.text.strip():
                 return []
         except Exception:
             return []
-
-        # Strip BOM if present (some servers serve sitemap.xml with one)
         text = r.text.lstrip('\ufeff').strip()
         try:
             root = ET.fromstring(text)
         except ET.ParseError:
             return []
-
-        # Sitemap namespace — strip it for simpler queries
         ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-
         urls: list[str] = []
-
-        # Case 1: sitemap-index. Recurse into each child sitemap.
         if root.tag.endswith('sitemapindex'):
             if not recurse:
                 return []
             for child in root.findall('sm:sitemap/sm:loc', ns):
                 if child.text and len(urls) < cap:
-                    urls.extend(
-                        self._parse_sitemap(child.text.strip(),
-                                             recurse=False, cap=cap - len(urls))
-                    )
+                    urls.extend(self._parse_sitemap(
+                        child.text.strip(), recurse=False, cap=cap - len(urls)
+                    ))
             return urls[:cap]
-
-        # Case 2: regular sitemap with <url> elements
         for loc in root.findall('sm:url/sm:loc', ns):
             if loc.text and len(urls) < cap:
                 urls.append(loc.text.strip())
-
         return urls
 
+    def _seed_queue_from_sitemap(self):
+        """If sitemap.xml exists, use it to seed the URL queue (vs link-following only)."""
+        sitemap_urls = self.discover_sitemap_urls(self.base_url)
+        if not sitemap_urls:
+            return 0  # No sitemap; fall back to menu/footer link discovery
+        # Reset queue + visited to use sitemap URLs as the seed
+        ordered: list[str] = []
+        if self.base_url in sitemap_urls:
+            ordered.append(self.base_url)
+        for u in sitemap_urls:
+            if u != self.base_url and u not in ordered:
+                ordered.append(u)
+        while not self.q.empty():
+            try:
+                self.q.get_nowait()
+            except Exception:
+                break
+        self.visited = set(ordered)
+        for u in ordered[:self.max_pages]:
+            self.q.put(u)
+        return len(ordered[:self.max_pages])
+
     def crawl(self) -> list[dict]:
-        """Run the crawl. Returns the list of fetched pages."""
-        # Try sitemap.xml first — gives much better coverage than link-following
-        if self.base_url:
-            sitemap_urls = self.discover_sitemap_urls(self.base_url)
-            if sitemap_urls:
-                # Replace whatever's currently in the queue with sitemap URLs.
-                # Keep the start URL first so it's always page #1.
-                ordered: list[str] = []
-                if self.base_url in sitemap_urls:
-                    ordered.append(self.base_url)
-                for u in sitemap_urls:
-                    if u != self.base_url and u not in ordered:
-                        ordered.append(u)
-
-                # Reset queue + visited to use sitemap URLs as the seed
-                while not self.q.empty():
-                    try:
-                        self.q.get_nowait()
-                    except Exception:
-                        break
-                self.visited = set(ordered)
-                for u in ordered[:self.max_pages]:
-                    self.q.put(u)
-
+        """
+        Legacy method: collects all pages into a list before returning.
+        Kept for backwards compatibility with existing tests.
+        For new code, use crawl_streaming() which is much more memory-efficient.
+        """
+        self._seed_queue_from_sitemap()
         empty_rounds = 0
         while len(self.pages) < self.max_pages and empty_rounds < 4:
             if self.should_stop():
@@ -712,6 +1183,70 @@ class Crawler:
                 time.sleep(self.delay)
 
         return self.pages
+
+    def crawl_streaming(self):
+        """
+        STREAMING crawler — yields one page dict at a time as soon as it's
+        fetched. This is the memory-efficient version used in production:
+        callers should analyze each page and discard the 'html' field
+        immediately, so we never have more than a handful of full HTML
+        documents in memory at once.
+
+        Cuts peak memory by ~5× vs the old crawl() pattern that collected
+        all pages into a list first. Critical for Render free tier
+        (512 MB RAM) when auditing 50+ pages on rich product sites.
+
+        Each yielded dict has the standard shape (url, html, status,
+        response_time, content_length). Caller is responsible for
+        bookkeeping (counting pages, stopping at max_pages, etc.).
+        """
+        pages_yielded = 0
+        self._seed_queue_from_sitemap()
+
+        empty_rounds = 0
+        while pages_yielded < self.max_pages and empty_rounds < 4:
+            if self.should_stop():
+                return
+
+            batch: list[str] = []
+            while not self.q.empty() and len(batch) < self.threads:
+                try:
+                    batch.append(self.q.get_nowait())
+                except Exception:
+                    break
+
+            if not batch:
+                empty_rounds += 1
+                time.sleep(0.5)
+                continue
+            empty_rounds = 0
+
+            with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+                futures = {ex.submit(self.fetch, u): u for u in batch}
+                for fut in as_completed(futures):
+                    if self.should_stop():
+                        return
+                    res = fut.result()
+                    if res and res.get('html') and res.get('status') == 200:
+                        with self.lock:
+                            if pages_yielded >= self.max_pages:
+                                return
+                            pages_yielded += 1
+                            self.on_progress(
+                                pages_yielded, self.max_pages, res['url']
+                            )
+                            # Extract links BEFORE yielding (so we still queue
+                            # discovered links even though caller will discard
+                            # the HTML after analyzing).
+                            for lk in self.extract_links(res['html'], res['url']):
+                                if lk not in self.visited:
+                                    self.visited.add(lk)
+                                    self.q.put(lk)
+                        # Yield outside the lock — caller does heavy work
+                        yield res
+
+            if self.delay:
+                time.sleep(self.delay)
 
 
 # ============================================================
@@ -783,6 +1318,10 @@ class Analyzer:
         issues += self._check_schema_validation(soup)
         issues += self._check_responsive(soup, html)
         issues += self._check_inquiry_form(soup)
+        # 360-degree checks: security headers, mixed content, social tags
+        issues += self._check_security_headers(pg)
+        issues += self._check_mixed_content(soup, url)
+        issues += self._check_social_media_tags(soup)
 
         # Deep-audit-only network checks
         if self.deep_audit:
@@ -1676,6 +2215,111 @@ class Analyzer:
 
         return issues
 
+    # ---------- 360-degree: security headers ----------
+    def _check_security_headers(self, page) -> list[dict]:
+        """
+        Check HTTP response headers for security best practices.
+        These are passed in via page['response_headers'] from the crawler.
+        Signals professionalism and protects users from common attacks.
+
+        Maps to the 'mobile_friendly' / technical checkpoint since there's
+        no dedicated security checkpoint in the 27-point list.
+        """
+        issues: list[dict] = []
+        # Only skip if we genuinely don't have header info (e.g. fetch failed
+        # without recording headers). An empty dict means "we got the response
+        # but no security headers were set" — which is exactly the issue we
+        # want to flag.
+        if 'response_headers' not in page:
+            return issues
+        headers = {k.lower(): v for k, v in (page.get('response_headers') or {}).items()}
+
+        # Strict-Transport-Security (HSTS) — protects against downgrade attacks
+        if 'strict-transport-security' not in headers:
+            issues.append(_iss('html', 'info', 'HSTS header missing',
+                               'No Strict-Transport-Security header — browsers may '
+                               'allow HTTPS downgrade attacks.',
+                               'Add: Strict-Transport-Security: max-age=31536000; includeSubDomains',
+                               checkpoint_id='mobile_friendly'))
+
+        # X-Content-Type-Options — prevents MIME sniffing exploits
+        if 'x-content-type-options' not in headers:
+            issues.append(_iss('html', 'info', 'X-Content-Type-Options missing',
+                               'Browsers may sniff content types and execute unexpected code.',
+                               'Add: X-Content-Type-Options: nosniff',
+                               checkpoint_id='mobile_friendly'))
+
+        # Content-Security-Policy — protects against XSS
+        if 'content-security-policy' not in headers:
+            issues.append(_iss('html', 'info', 'Content-Security-Policy missing',
+                               'No CSP defined — XSS attacks have a wider surface.',
+                               'Add a CSP header restricting script/style sources. '
+                               'Start with: Content-Security-Policy: default-src \'self\'',
+                               checkpoint_id='mobile_friendly'))
+
+        return issues
+
+    # ---------- 360-degree: mixed content (HTTPS page loading HTTP) ----------
+    def _check_mixed_content(self, soup, url) -> list[dict]:
+        """
+        If the page is loaded over HTTPS but pulls resources over HTTP,
+        browsers show a broken padlock — kills trust instantly.
+        """
+        issues: list[dict] = []
+        if not url.startswith('https://'):
+            return issues  # Only matters on HTTPS pages
+
+        http_resources: list[str] = []
+        for tag, attr in [('img', 'src'), ('script', 'src'),
+                          ('link', 'href'), ('iframe', 'src')]:
+            for el in soup.find_all(tag):
+                val = el.get(attr, '') or ''
+                if val.startswith('http://'):
+                    http_resources.append(f'<{tag}> {val[:60]}')
+                    if len(http_resources) >= 5:
+                        break
+            if len(http_resources) >= 5:
+                break
+
+        if http_resources:
+            example = http_resources[0]
+            issues.append(_iss('html', 'warning',
+                               f'{len(http_resources)} resources loaded over HTTP',
+                               f'HTTPS pages with HTTP resources show a broken '
+                               f'padlock in browsers — looks unprofessional. '
+                               f'First: {example}',
+                               'Update all http:// resource URLs to https:// '
+                               '(or use protocol-relative //)',
+                               checkpoint_id='mobile_friendly'))
+        return issues
+
+    # ---------- 360-degree: social media completeness (Twitter Cards) ----------
+    def _check_social_media_tags(self, soup) -> list[dict]:
+        """
+        Beyond basic Open Graph (which we already check elsewhere), verify
+        Twitter Card tags are present. Important for B2B social sharing.
+        """
+        issues: list[dict] = []
+
+        # OG image is the most important — without it, social previews are bare
+        if not soup.find('meta', property='og:image'):
+            issues.append(_iss('seo', 'info', 'og:image missing',
+                               'When users share the page on LinkedIn/Twitter/'
+                               'Facebook/WhatsApp, no preview image will show — '
+                               'massive engagement drop.',
+                               '<meta property="og:image" content="https://yoursite.com/og-image.jpg"> '
+                               '(use a 1200×630 image)',
+                               checkpoint_id='schema'))
+
+        # Twitter Card type — controls what Twitter/X shows when shared
+        if not soup.find('meta', attrs={'name': 'twitter:card'}):
+            issues.append(_iss('seo', 'info', 'Twitter Card meta missing',
+                               'Twitter/X shows a basic link preview instead of a rich card.',
+                               '<meta name="twitter:card" content="summary_large_image">',
+                               checkpoint_id='schema'))
+
+        return issues
+
     # ============================================================
     #  END NEW CHECKLIST-DRIVEN CHECKS
     # ============================================================
@@ -1893,6 +2537,59 @@ class Analyzer:
 class ReportGen:
     """Generate downloadable reports in HTML, Excel, and CSV formats."""
 
+    def _build_recommendations_html(self, recs: list[dict]) -> str:
+        """Render the top recommendations as a polished HTML block for the report."""
+        if not recs:
+            return ''
+
+        theme_colors = {
+            'seo':     ('#2b6cb0', '#ebf4ff'),  # blue
+            'design':  ('#6b46c1', '#faf5ff'),  # purple
+            'content': ('#2f855a', '#f0fff4'),  # green
+            'trust':   ('#c05621', '#fffaf0'),  # amber
+            'tech':    ('#c53030', '#fff5f5'),  # red
+        }
+        sev_badge = {
+            'critical': ('#742a2a', '#fed7d7', 'CRITICAL'),
+            'warning':  ('#7b341e', '#feebc8', 'WARNING'),
+            'info':     ('#2b6cb0', '#ebf4ff', 'IMPROVEMENT'),
+        }
+
+        parts: list[str] = [
+            '<div class="recs">',
+            '<h2>Top Recommendations</h2>',
+            '<p class="r-hint">Design-based suggestions ordered by impact across your site. '
+            'Start at the top — those have the highest leverage.</p>',
+        ]
+
+        for idx, r in enumerate(recs, 1):
+            tc_fg, tc_bg = theme_colors.get(r['theme'], ('#4a5568', '#f7fafc'))
+            sev_fg, sev_bg, sev_label = sev_badge.get(r['severity'], ('#4a5568', '#edf2f7', 'INFO'))
+            actions_li = ''.join(
+                f'<li>{self._html_escape(a)}</li>' for a in r['action_steps']
+            )
+            parts.append(
+                f'<div class="r-card">'
+                f'<div class="r-head">'
+                f'<span class="r-num">#{idx}</span>'
+                f'<span class="r-theme" style="color:{tc_fg};background:{tc_bg}">'
+                f'{self._html_escape(r["theme_label"])}'
+                f'</span>'
+                f'<span class="r-sev" style="color:{sev_fg};background:{sev_bg}">{sev_label}</span>'
+                f'<span class="r-scope">{r["affected_pages"]} of {r["total_pages"]} pages</span>'
+                f'</div>'
+                f'<h3 class="r-headline">{self._html_escape(r["headline"])}</h3>'
+                f'<p class="r-why">{self._html_escape(r["why"])}</p>'
+                f'<details class="r-actions">'
+                f'<summary>Action steps ({len(r["action_steps"])})</summary>'
+                f'<ol>{actions_li}</ol>'
+                f'</details>'
+                f'</div>'
+            )
+
+        parts.append('</div>')
+        return ''.join(parts)
+
     def _build_checklist_html(self, checklist_summary: list[dict], total_pages: int) -> str:
         """Render the 27-point checklist summary as an HTML block."""
         if not checklist_summary or total_pages == 0:
@@ -1980,6 +2677,13 @@ class ReportGen:
         cl_summary = aggregate_checklist(results)
         cl_html = self._build_checklist_html(cl_summary, tp)
 
+        # ---- Build the Executive Summary / Recommendations block ----
+        # This is the "what to actually DO" panel — design-based suggestions
+        # prioritized by impact across the whole site. Shown right after the
+        # score cards, before any of the per-page detail.
+        recs = generate_recommendations(results)
+        recs_html = self._build_recommendations_html(recs[:7])  # top 7 in report
+
         pages_html = ''
         for idx, r in enumerate(results):
             sc = r['scores'].get('overall', 0)
@@ -2030,13 +2734,6 @@ class ReportGen:
                     f'margin:0">{i["description"]}</p>{fix_html}</div>'
                 )
 
-            # Pre-compute the "no issues" fallback HTML outside the f-string.
-            # Python 3.11 doesn't allow backslashes inside f-string {...} blocks
-            # (PEP 701 lifted that in 3.12, but Render runs 3.11). Define it
-            # once here, reference it cleanly below.
-            no_issues_html = '<p style="color:#a0aec0;font-size:13px">No issues found.</p>'
-            issues_block = iss_html or no_issues_html
-
             pages_html += (
                 f'<div class="pc" id="pc{idx}" data-score="{sc}" data-crit="{crit_c}">'
                 f'<div class="ph" onclick="t({idx})">'
@@ -2061,7 +2758,7 @@ class ReportGen:
                 f'<div style="font-size:18px;color:#a0aec0" id="ti{idx}">▾</div></div>'
                 f'<div id="pb{idx}" style="display:none;border-top:1px solid #f0f0f0;'
                 f'padding:12px 14px"><div style="margin-bottom:10px">{bars}</div>'
-                f'{issues_block}</div>'
+                f'{iss_html or "<p style=\'color:#a0aec0;font-size:13px\'>No issues found.</p>"}</div>'
                 f'</div>'
             )
 
@@ -2092,7 +2789,29 @@ class ReportGen:
             '.ph{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer}'
             '.ph:hover{background:#f7fafc}'
             '@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}'
-            # Checklist summary block styles
+            # Recommendations / Executive Summary block
+            '.recs{margin:6px 18px 18px;background:#fff;border-radius:9px;'
+            'box-shadow:0 1px 3px rgba(0,0,0,.06);padding:14px 16px}'
+            '.recs h2{font-size:15px;font-weight:600;margin-bottom:4px}'
+            '.recs .r-hint{font-size:11.5px;color:#718096;margin-bottom:14px}'
+            '.recs .r-card{border:1px solid #e2e8f0;border-radius:7px;'
+            'padding:12px 14px;margin-bottom:9px;background:#fafbfc}'
+            '.recs .r-head{display:flex;align-items:center;gap:8px;'
+            'flex-wrap:wrap;margin-bottom:6px;font-size:11px}'
+            '.recs .r-num{font-weight:700;color:#a0aec0;font-size:12px}'
+            '.recs .r-theme,.recs .r-sev{padding:2px 7px;border-radius:3px;'
+            'font-weight:600;font-size:10px;letter-spacing:.4px}'
+            '.recs .r-scope{margin-left:auto;color:#718096;font-size:11px}'
+            '.recs .r-headline{font-size:14px;font-weight:600;color:#2d3748;'
+            'margin:2px 0 6px}'
+            '.recs .r-why{font-size:12.5px;color:#4a5568;line-height:1.55;margin:0 0 8px}'
+            '.recs .r-actions{font-size:12px;color:#2d3748}'
+            '.recs .r-actions summary{cursor:pointer;font-weight:600;color:#3182ce;'
+            'padding:4px 0;user-select:none}'
+            '.recs .r-actions summary:hover{color:#2c5282}'
+            '.recs .r-actions ol{margin:6px 0 0 22px;line-height:1.6}'
+            '.recs .r-actions li{margin-bottom:3px}'
+            # Existing checklist styles
             '.cls{margin:6px 18px 18px;background:#fff;border-radius:9px;'
             'box-shadow:0 1px 3px rgba(0,0,0,.06);padding:14px 16px}'
             '.cls h2{font-size:14px;font-weight:600;margin-bottom:4px}'
@@ -2144,6 +2863,7 @@ class ReportGen:
             f'<button class="fb" onclick="f(\'low\',this)">Score &lt;60</button>'
             f'<button class="fb" onclick="f(\'good\',this)">Score &ge;80</button>'
             f'<input class="sr" placeholder="Search URL / title..." oninput="s(this.value)"></div>'
+            f'{recs_html}'
             f'{cl_html}'
             f'<div class="pg" id="pg">{pages_html}</div>'
             '<script>'

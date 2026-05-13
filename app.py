@@ -50,7 +50,8 @@ log = logging.getLogger("audit-wizard")
 
 # ===== Configuration =====
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
-MAX_PAGES_LIMIT = int(os.environ.get("MAX_PAGES_LIMIT", 100))   # cap per audit run
+MAX_PAGES_LIMIT = int(os.environ.get("MAX_PAGES_LIMIT", 100))      # hard cap for free tier
+DEFAULT_MAX_PAGES = int(os.environ.get("DEFAULT_MAX_PAGES", 30))   # what the form pre-fills
 
 
 # ===== Flask app =====
@@ -79,6 +80,12 @@ def step1():
     if request.method == "POST":
         url = (request.form.get("url") or "").strip()
         industry = (request.form.get("industry") or "auto").strip()
+        try:
+            max_pages = int(request.form.get("max_pages") or DEFAULT_MAX_PAGES)
+        except ValueError:
+            max_pages = DEFAULT_MAX_PAGES
+        email = (request.form.get("email") or "").strip()
+        target_keyword = (request.form.get("target_keyword") or "").strip()
         deep_audit = request.form.get("deep_audit") == "on"
 
         # Validate URL
@@ -86,38 +93,70 @@ def step1():
             flash("Please enter a website URL.", "error")
             return render_template(
                 "step1.html",
+                default_max_pages=DEFAULT_MAX_PAGES,
                 max_pages_limit=MAX_PAGES_LIMIT,
             )
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
-        # Page cap: no longer a user input. Always use the env-driven cap.
-        # Free tier defaults to 100 (per render.yaml). Upgrade Render +
-        # change MAX_PAGES_LIMIT env var to scale up — no code change needed.
-        max_pages = MAX_PAGES_LIMIT
+        # Clamp page count
+        max_pages = max(1, min(MAX_PAGES_LIMIT, max_pages))
 
         # Validate industry
         valid = {"auto", "metals", "ecommerce", "saas", "healthcare", "realestate", "generic"}
         if industry not in valid:
             industry = "auto"
 
-        # Create the job. Email is empty (the field has been removed from
-        # the form); target_keyword is empty (also removed). Both kwargs
-        # remain on the create_job signature for backwards compatibility.
-        job = jobs.create_job(url, industry, max_pages, email="",
-                              target_keyword="",
+        # Validate email if provided
+        if email and "@" not in email:
+            flash("That email address looks invalid.", "error")
+            return render_template(
+                "step1.html",
+                default_max_pages=DEFAULT_MAX_PAGES,
+                max_pages_limit=MAX_PAGES_LIMIT,
+                form_url=url, form_industry=industry,
+                form_max_pages=max_pages, form_email=email,
+                form_target_keyword=target_keyword,
+                form_deep_audit=deep_audit,
+            )
+
+        # Cap target keyword length for safety
+        if len(target_keyword) > 100:
+            target_keyword = target_keyword[:100]
+
+        # Create the job
+        job = jobs.create_job(url, industry, max_pages, email,
+                              target_keyword=target_keyword,
                               deep_audit=deep_audit)
 
-        # Kick off background worker. No on_complete callback needed —
-        # email sending is currently disabled (no Resend key configured).
-        # Re-enable later by passing on_complete=email_sender.send_audit_complete
-        # once RESEND_API_KEY is set.
-        jobs.run_audit_in_background(job)
+        # Post-audit hook: send email with executive summary + top
+        # design-based recommendations + link to full report.
+        def on_complete(j):
+            if not j.email or j.status != "done":
+                return
+            try:
+                # Lazy-import here to avoid loading audit_engine at app boot
+                # if it ever fails — keeps the rest of the app working.
+                from audit_engine import top_recommendations, overall_health_summary
+                summary = jobs.get_summary_stats(j)
+                recs = top_recommendations(j.results, n=5)
+                health = overall_health_summary(j.results)
+                ok, msg = email_sender.send_audit_complete(
+                    j.email, j.url, j.id, summary,
+                    recommendations=recs, health=health,
+                )
+                log.info(f"[job {j.id}] email send: ok={ok} msg={msg}")
+            except Exception as e:
+                log.exception(f"[job {j.id}] failed to send completion email: {e}")
+
+        # Kick off background worker
+        jobs.run_audit_in_background(job, on_complete=on_complete)
 
         return redirect(url_for("step2", job_id=job.id))
 
     return render_template(
         "step1.html",
+        default_max_pages=DEFAULT_MAX_PAGES,
         max_pages_limit=MAX_PAGES_LIMIT,
     )
 

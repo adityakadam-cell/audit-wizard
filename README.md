@@ -12,11 +12,9 @@ Sister project to `optimizer-wizard` — same design language, similar deploy.
 
 A 3-step wizard:
 
-1. **Enter a URL** — plus optional industry override and "Deep audit" toggle. That's it.
-2. **Watch the live progress** — sitemap discovery, then crawl, then per-page analysis. Cancel anytime.
-3. **Review the results** — score cards, the 27-point checklist summary (site-wide pass/fail), filterable per-page issue list, and download links for HTML / Excel / CSV.
-
-The crawler reads `sitemap.xml` (and `/robots.txt` for sitemap directives) when the site publishes one — typical for industrial product pages — to find every URL. Falls back to following menu/footer links if no sitemap is published. Audits up to `MAX_PAGES_LIMIT` pages per run (default 100; bump in env vars when on a paid Render plan).
+1. **Enter a URL** — plus optional industry, target keyword, deep-audit toggle, page count cap, and email address.
+2. **Watch the live progress** — crawl phase, then analyse phase. Cancel anytime.
+3. **Review the results** — score cards, the 27-point checklist summary (site-wide pass/fail), filterable per-page issue list, and download links for HTML / Excel / CSV. Optional: link emailed to the address you provided.
 
 ### The 27-point checklist
 
@@ -48,14 +46,8 @@ Industry-specific checks layered on top:
 
 ### Optional inputs on Step 1
 
-- **Industry** — auto-detected by default. Override if you want metals/ecommerce/saas/healthcare/realestate-specific checks even when the heuristic guesses wrong.
+- **Target keyword** — if provided, the checklist's "Keyword Usage" item checks density (1–3 %), placement in title/H1, and over-stuffing. Leave blank to skip.
 - **Deep audit** — off by default. When on, also HEAD-checks every image (≤ 100 KB) and validates that CTA buttons link to working URLs. Adds ~5–10 s per page; enable for thorough pre-launch audits.
-
-### Removed (currently)
-
-- **Email** — the field is gone. Email-on-completion is implemented in `email_sender.py` and ready to be wired back in when you set `RESEND_API_KEY` (see comments in `app.py`'s `step1` handler and `render.yaml`).
-- **Target keyword** — removed because most teams don't use it; checklist item #13 (Keyword Usage) is now `manual` review.
-- **Max pages** — removed from the form. The cap comes from the `MAX_PAGES_LIMIT` env var (default 100). Change the env var to scale up after upgrading your Render plan; no code change needed.
 
 ---
 
